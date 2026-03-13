@@ -113,8 +113,30 @@ class TradingEngine:
 
     # ── Price Fetching (multi-source with cloud fallback) ───────────────────
 
+    _is_cloud = os.environ.get("RENDER") or os.environ.get("RENDER_EXTERNAL_URL")
+
+    def _run_with_timeout(self, fn, args, timeout_sec=20):
+        """Run a function with a hard thread-based timeout."""
+        result = [None, None]
+        error = [None]
+        def _target():
+            try:
+                result[0], result[1] = fn(*args)
+            except Exception as e:
+                error[0] = e
+        t = threading.Thread(target=_target, daemon=True)
+        t.start()
+        t.join(timeout=timeout_sec)
+        if t.is_alive():
+            raise TimeoutError(f"Source timed out after {timeout_sec}s")
+        if error[0]:
+            raise error[0]
+        return result[0], result[1]
+
     def _fetch_yfinance(self, sym: str, info: dict):
-        """Primary source: Yahoo Finance via yfinance."""
+        """Primary source: Yahoo Finance via yfinance (skipped on cloud — hangs)."""
+        if self._is_cloud:
+            return None, None
         ticker = yf.Ticker(info["yf"])
         hist = ticker.history(period="2d", interval="5m")
         if hist.empty:
@@ -214,7 +236,7 @@ class TradingEngine:
             ]
             for source_name, fetcher in sources:
                 try:
-                    price, hist = fetcher(sym, info)
+                    price, hist = self._run_with_timeout(fetcher, (sym, info), timeout_sec=20)
                     if price and price > 0:
                         self._log(f"[{sym}] price ${price:.2f} via {source_name}", level="INFO")
                         break

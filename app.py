@@ -64,7 +64,7 @@ def api_debug():
         ("yahoo_quote", engine._fetch_marketaux),
     ]:
         try:
-            price, hist = fn(sym, info)
+            price, hist = engine._run_with_timeout(fn, (sym, info), timeout_sec=15)
             results[name] = {"price": price, "hist_len": len(hist) if hist is not None else 0}
         except Exception as e:
             results[name] = {"error": f"{type(e).__name__}: {e}"}
