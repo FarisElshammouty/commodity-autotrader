@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commodity Auto-Trader</title>
+<style>
+  :root {
+    --bg: #0a0e17; --card: #111827; --border: #1e293b;
+    --text: #e2e8f0; --muted: #64748b; --accent: #3b82f6;
+    --green: #22c55e; --red: #ef4444; --yellow: #eab308;
+    --orange: #f97316;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .header {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; }
+  .header h1 span { color: var(--accent); }
+  .status-badge {
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .status-RUNNING { background: rgba(34,197,94,0.15); color: var(--green); }
+  .status-STOPPED { background: rgba(239,68,68,0.15); color: var(--red); }
+  .status-INITIALIZING { background: rgba(234,179,8,0.15); color: var(--yellow); }
+  .status-PRICE_ERROR { background: rgba(249,115,22,0.15); color: var(--orange); }
+
+  .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
+
+  /* ── Metrics Row ────────────────────────────────── */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .metric {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; text-align: center;
+  }
+  .metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .metric .value { font-size: 24px; font-weight: 700; }
+  .metric .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .positive { color: var(--green); }
+  .negative { color: var(--red); }
+  .warning { color: var(--yellow); }
+
+  /* ── Floor Gauge ────────────────────────────────── */
+  .floor-gauge {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; margin-bottom: 20px;
+  }
+  .floor-gauge .bar-bg {
+    height: 24px; background: #1e293b; border-radius: 12px; overflow: hidden; position: relative; margin-top: 8px;
+  }
+  .floor-gauge .bar-fill {
+    height: 100%; border-radius: 12px; transition: width 0.5s ease;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; font-weight: 700; min-width: 60px;
+  }
+  .floor-gauge .labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  /* ── Grid Layout ────────────────────────────────── */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px; overflow: hidden;
+  }
+  .card h2 {
+    font-size: 14px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Prices Grid ────────────────────────────────── */
+  .prices-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .price-card {
+    background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+  }
+  .price-card .sym { font-size: 13px; font-weight: 700; color: var(--accent); }
+  .price-card .prc { font-size: 22px; font-weight: 700; margin: 4px 0; }
+  .price-card .ind { font-size: 10px; color: var(--muted); line-height: 1.6; }
+  .price-card .ind span { display: inline-block; margin-right: 8px; }
+  .trend-BULLISH { color: var(--green) !important; }
+  .trend-BEARISH { color: var(--red) !important; }
+
+  /* ── Positions ──────────────────────────────────── */
+  .position {
+    background: #0f172a; border-radius: 8px; padding: 12px; margin-bottom: 8px;
+    border-left: 3px solid var(--accent);
+  }
+  .position.buy { border-left-color: var(--green); }
+  .position.sell { border-left-color: var(--red); }
+  .pos-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .pos-header .sym { font-weight: 700; font-size: 14px; }
+  .pos-header .side { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+  .side-BUY { background: rgba(34,197,94,0.15); color: var(--green); }
+  .side-SELL { background: rgba(239,68,68,0.15); color: var(--red); }
+  .pos-details { font-size: 11px; color: var(--muted); line-height: 1.8; }
+  .pos-details strong { color: var(--text); }
+  .pos-reason { font-size: 11px; color: var(--accent); margin-top: 6px; padding: 6px 8px; background: rgba(59,130,246,0.08); border-radius: 4px; line-height: 1.5; }
+
+  /* ── Trade History ──────────────────────────────── */
+  .trade-entry {
+    padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+  }
+  .trade-entry:last-child { border-bottom: none; }
+  .trade-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .trade-pnl { font-weight: 700; font-size: 14px; }
+  .trade-reasons { color: var(--muted); font-size: 11px; line-height: 1.6; margin-top: 4px; }
+
+  /* ── Activity Log ───────────────────────────────── */
+  .log-area {
+    max-height: 400px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 11px; line-height: 1.7;
+  }
+  .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(30,41,59,0.5); }
+  .log-time { color: var(--muted); margin-right: 8px; }
+  .log-TRADE { color: var(--accent); }
+  .log-ERROR { color: var(--red); }
+  .log-CRITICAL { color: var(--red); font-weight: 700; }
+  .log-WARN { color: var(--yellow); }
+  .log-INFO { color: var(--muted); }
+
+  .empty { color: var(--muted); font-style: italic; text-align: center; padding: 20px; }
+
+  /* ── Charts Row ──────────────────────────────────── */
+  .charts-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  @media (max-width: 1200px) { .charts-row { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px)  { .charts-row { grid-template-columns: 1fr; } }
+  .chart-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+  }
+  .chart-card h3 {
+    font-size: 11px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .chart-card h3 .chart-price { color: var(--text); font-size: 14px; font-weight: 700; }
+  .chart-container { width: 100%; height: 220px; }
+
+  /* ── Scrollbar ──────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+</head>
+<body>
+
+<div class="header">
+  <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
+  <div>
+    <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
+    <span style="color:var(--muted);font-size:11px;margin-left:12px" id="clock"></span>
+  </div>
+</div>
+
+<div class="container">
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="label">Balance</div>
+      <div class="value" id="mBalance">$25,000.00</div>
+    </div>
+    <div class="metric">
+      <div class="label">Equity</div>
+      <div class="value" id="mEquity">$25,000.00</div>
+      <div class="sub" id="mUnrealized">Unrealized: $0.00</div>
+    </div>
+    <div class="metric">
+      <div class="label">Daily P&L</div>
+      <div class="value" id="mDailyPnl">$0.00</div>
+    </div>
+    <div class="metric">
+      <div class="label">Buffer to Floor</div>
+      <div class="value" id="mBuffer">$1,000.00</div>
+      <div class="sub">Floor: $24,000</div>
+    </div>
+    <div class="metric">
+      <div class="label">Total Trades</div>
+      <div class="value" id="mTrades">0</div>
+      <div class="sub" id="mWinRate">Win rate: 0%</div>
+    </div>
+    <div class="metric">
+      <div class="label">Max Drawdown</div>
+      <div class="value" id="mDrawdown">$0.00</div>
+    </div>
+  </div>
+
+  <!-- Floor Gauge -->
+  <div class="floor-gauge">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-size:12px;font-weight:600;color:var(--muted)">EQUITY SAFETY GAUGE</span>
+      <span style="font-size:11px" id="gaugeLabel">$25,000 / $24,000 floor</span>
+    </div>
+    <div class="bar-bg">
+      <div class="bar-fill" id="floorBar" style="width:100%;background:var(--green)">100%</div>
+    </div>
+    <div class="labels">
+      <span>$24,000 (HARD FLOOR)</span>
+      <span>$25,000 (START)</span>
+      <span>$26,000+</span>
+    </div>
+  </div>
+
+  <!-- Price Charts -->
+  <div class="charts-row">
+    <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
+    <div class="chart-card"><h3><span>WTI Crude (WTI)</span><span class="chart-price" id="cp-WTI">--</span></h3><div class="chart-container" id="cc-WTI"></div></div>
+    <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
+    <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
+  </div>
+
+  <!-- Main Grid -->
+  <div class="grid">
+    <!-- Live Prices & Indicators -->
+    <div class="card">
+      <h2>Live Prices & Indicators</h2>
+      <div class="prices-grid" id="pricesGrid">
+        <div class="empty">Waiting for price data...</div>
+      </div>
+    </div>
+
+    <!-- Open Positions -->
+    <div class="card">
+      <h2>Open Positions <span id="posCount" style="color:var(--accent)"></span></h2>
+      <div id="positions"><div class="empty">No open positions</div></div>
+    </div>
+
+    <!-- Trade History -->
+    <div class="card">
+      <h2>Closed Trades</h2>
+      <div id="closedTrades" style="max-height:400px;overflow-y:auto">
+        <div class="empty">No trades yet</div>
+      </div>
+    </div>
+
+    <!-- Activity Log -->
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="log-area" id="logArea">
+        <div class="empty">Waiting for activity...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const fmt = (n, d=2) => n.toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d});
+const fmtUsd = n => '$' + fmt(Math.abs(n));
+const signUsd = n => (n >= 0 ? '+' : '-') + '$' + fmt(Math.abs(n));
+const cls = n => n >= 0 ? 'positive' : 'negative';
+
+const SYMBOL_NAMES = {
+  'BRENT': 'Brent Crude',
+  'WTI': 'WTI Crude',
+  'XAGUSD': 'Silver',
+  'XAUUSD': 'Gold'
+};
+
+function updateDashboard(s) {
+  // Status
+  $('#statusBadge').textContent = s.status;
+  $('#statusBadge').className = 'status-badge status-' + s.status;
+
+  // Metrics
+  $('#mBalance').textContent = '$' + fmt(s.balance);
+  $('#mEquity').textContent = '$' + fmt(s.equity);
+  $('#mEquity').className = 'value ' + cls(s.equity - 25000);
+  $('#mUnrealized').innerHTML = 'Unrealized: <span class="' + cls(s.unrealized_pnl) + '">' + signUsd(s.unrealized_pnl) + '</span>';
+  $('#mDailyPnl').textContent = signUsd(s.daily_pnl);
+  $('#mDailyPnl').className = 'value ' + cls(s.daily_pnl);
+  $('#mBuffer').textContent = '$' + fmt(s.buffer_to_floor);
+  $('#mBuffer').className = 'value ' + (s.buffer_to_floor < 300 ? 'negative' : s.buffer_to_floor < 600 ? 'warning' : 'positive');
+  $('#mTrades').textContent = s.total_trades;
+  $('#mWinRate').textContent = 'Win rate: ' + s.win_rate + '%';
+  $('#mDrawdown').textContent = '$' + fmt(s.max_drawdown);
+  $('#mDrawdown').className = 'value ' + (s.max_drawdown > 500 ? 'negative' : '');
+
+  // Floor Gauge
+  const pct = Math.min(100, Math.max(0, ((s.equity - 24000) / 2000) * 100));
+  const bar = $('#floorBar');
+  bar.style.width = pct + '%';
+  bar.textContent = pct.toFixed(0) + '%';
+  bar.style.background = pct < 20 ? 'var(--red)' : pct < 40 ? 'var(--orange)' : pct < 60 ? 'var(--yellow)' : 'var(--green)';
+  $('#gaugeLabel').textContent = '$' + fmt(s.equity) + ' / $24,000 floor';
+
+  // Prices
+  const symbols = ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'];
+  let pricesHtml = '';
+  symbols.forEach(sym => {
+    const price = s.prices[sym];
+    const ind = s.indicators[sym];
+    if (!price) {
+      pricesHtml += `<div class="price-card"><div class="sym">${sym}</div><div class="prc" style="color:var(--muted)">--</div><div class="ind">Loading...</div></div>`;
+      return;
+    }
+    const trendCls = ind ? 'trend-' + ind.trend : '';
+    pricesHtml += `<div class="price-card">
+      <div class="sym">${SYMBOL_NAMES[sym]} (${sym})</div>
+      <div class="prc">$${fmt(price, sym.includes('XAU') ? 2 : sym.includes('XAG') ? 3 : 2)}</div>
+      ${ind ? `<div class="ind">
+        <span class="${trendCls}">Trend: ${ind.trend}</span><br>
+        <span>RSI: ${ind.rsi.toFixed(1)}</span>
+        <span>ATR: ${ind.atr.toFixed(3)}</span><br>
+        <span>SMA10: ${ind.sma_10.toFixed(2)}</span>
+        <span>SMA20: ${ind.sma_20.toFixed(2)}</span><br>
+        <span>MACD: ${ind.macd_histogram > 0 ? '+' : ''}${ind.macd_histogram.toFixed(3)}</span>
+        <span>BB: ${(ind.bb_position * 100).toFixed(0)}%</span>
+        <span>ROC5: ${ind.roc_5 > 0 ? '+' : ''}${ind.roc_5.toFixed(2)}%</span>
+      </div>` : ''}
+    </div>`;
+  });
+  $('#pricesGrid').innerHTML = pricesHtml || '<div class="empty">Waiting for price data...</div>';
+
+  // Open Positions
+  if (s.open_positions.length === 0) {
+    $('#positions').innerHTML = '<div class="empty">No open positions — scanning for opportunities...</div>';
+    $('#posCount').textContent = '';
+  } else {
+    $('#posCount').textContent = `(${s.open_positions.length})`;
+    let posHtml = '';
+    s.open_positions.forEach(p => {
+      const curPrice = s.prices[p.symbol] || p.entry_price;
+      posHtml += `<div class="position ${p.side.toLowerCase()}">
+        <div class="pos-header">
+          <span class="sym">${SYMBOL_NAMES[p.symbol]} (${p.symbol})</span>
+          <span class="side side-${p.side}">${p.side}</span>
+        </div>
+        <div class="pos-details">
+          <strong>Entry:</strong> $${fmt(p.entry_price, 4)} &nbsp;|&nbsp;
+          <strong>Current:</strong> $${fmt(curPrice, 4)} &nbsp;|&nbsp;
+          <strong>Qty:</strong> ${p.quantity}<br>
+          <strong>Stop Loss:</strong> $${fmt(p.stop_loss, 4)} &nbsp;|&nbsp;
+          <strong>Take Profit:</strong> $${fmt(p.take_profit, 4)}<br>
+          <strong>Unrealized P&L:</strong> <span class="${cls(p.unrealized_pnl)}">${signUsd(p.unrealized_pnl)}</span>
+        </div>
+        <div class="pos-reason">${p.reason}</div>
+      </div>`;
+    });
+    $('#positions').innerHTML = posHtml;
+  }
+
+  // Closed Trades (newest first)
+  if (s.closed_trades.length === 0) {
+    $('#closedTrades').innerHTML = '<div class="empty">No trades yet</div>';
+  } else {
+    let html = '';
+    [...s.closed_trades].reverse().forEach(t => {
+      html += `<div class="trade-entry">
+        <div class="trade-header">
+          <span><span class="side side-${t.side}" style="font-size:10px;padding:1px 6px">${t.side}</span> ${SYMBOL_NAMES[t.symbol]}</span>
+          <span class="trade-pnl ${cls(t.pnl)}">${signUsd(t.pnl)}</span>
+        </div>
+        <div class="trade-reasons">
+          Entry: $${fmt(t.entry_price,4)} &rarr; Exit: $${fmt(t.exit_price,4)} | Qty: ${t.quantity}<br>
+          <strong>Open:</strong> ${t.reason_open}<br>
+          <strong>Close:</strong> ${t.reason_close}
+        </div>
+      </div>`;
+    });
+    $('#closedTrades').innerHTML = html;
+  }
+
+  // Log
+  if (s.log.length > 0) {
+    let logHtml = '';
+    [...s.log].reverse().forEach(l => {
+      const time = l.time.split('T')[1].split('.')[0];
+      logHtml += `<div class="log-entry"><span class="log-time">${time}</span><span class="log-${l.level}">[${l.level}]</span> ${l.message}</div>`;
+    });
+    $('#logArea').innerHTML = logHtml;
+  }
+}
+
+// ── Charts ──────────────────────────────────────────────────────────────
+const SYMS = ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'];
+const chartState = {};
+
+function initCharts() {
+  SYMS.forEach(sym => {
+    const container = document.getElementById('cc-' + sym);
+    if (!container) return;
+    const chart = LightweightCharts.createChart(container, {
+      autoSize: true,
+      layout: { background: { color: '#0f172a' }, textColor: '#64748b', fontFamily: 'Segoe UI, system-ui, sans-serif', fontSize: 10 },
+      grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+      timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#1e293b' },
+      rightPriceScale: { borderColor: '#1e293b' },
+      crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
+    });
+    const priceSeries = chart.addLineSeries({ color: '#3b82f6', lineWidth: 2 });
+    chartState[sym] = { chart, priceSeries, priceLines: [] };
+  });
+}
+
+function updateCharts(s) {
+  SYMS.forEach(sym => {
+    const ch = chartState[sym];
+    if (!ch) return;
+    const history = (s.price_history && s.price_history[sym]) || [];
+    const price = s.prices && s.prices[sym];
+
+    // Update header price
+    const cpEl = document.getElementById('cp-' + sym);
+    if (cpEl && price) cpEl.textContent = '$' + fmt(price, sym.includes('XAU') ? 2 : sym.includes('XAG') ? 3 : 2);
+
+    if (!history.length) return;
+
+    // Convert to chart data, deduplicate by time
+    const seen = new Set();
+    const data = [];
+    history.forEach(p => {
+      const t = Math.floor(new Date(p.time).getTime() / 1000);
+      if (!seen.has(t)) { seen.add(t); data.push({ time: t, value: p.price }); }
+    });
+    data.sort((a, b) => a.time - b.time);
+    if (!data.length) return;
+
+    ch.priceSeries.setData(data);
+
+    // Remove old price lines
+    ch.priceLines.forEach(pl => { try { ch.priceSeries.removePriceLine(pl); } catch(e) {} });
+    ch.priceLines = [];
+
+    // Indicator overlay lines
+    const ind = s.indicators && s.indicators[sym];
+    if (ind) {
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.sma_10, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: 'SMA10' }));
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.sma_20, color: '#eab308', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: 'SMA20' }));
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.bb_upper, color: 'rgba(100,116,139,0.4)', lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: 'BB+' }));
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.bb_lower, color: 'rgba(100,116,139,0.4)', lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: 'BB-' }));
+    }
+
+    // SL / TP / Entry lines for open positions
+    (s.open_positions || []).filter(p => p.symbol === sym).forEach(pos => {
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.stop_loss, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SL' }));
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.take_profit, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'TP' }));
+      ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.entry_price, color: '#3b82f6', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'Entry' }));
+    });
+
+    // Build markers for entries and exits
+    const minT = data[0].time;
+    const maxT = data[data.length - 1].time;
+    const markers = [];
+
+    // Open position entry markers
+    (s.open_positions || []).filter(p => p.symbol === sym).forEach(pos => {
+      const t = Math.floor(new Date(pos.opened_at).getTime() / 1000);
+      markers.push({
+        time: Math.max(minT, Math.min(maxT, t)),
+        position: pos.side === 'BUY' ? 'belowBar' : 'aboveBar',
+        color: pos.side === 'BUY' ? '#22c55e' : '#ef4444',
+        shape: pos.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+        text: pos.side,
+      });
+    });
+
+    // Closed trade entry + exit markers
+    (s.closed_trades || []).filter(tr => tr.symbol === sym).forEach(tr => {
+      const tOpen = Math.floor(new Date(tr.opened_at).getTime() / 1000);
+      if (tOpen >= minT && tOpen <= maxT) {
+        markers.push({
+          time: tOpen,
+          position: tr.side === 'BUY' ? 'belowBar' : 'aboveBar',
+          color: tr.side === 'BUY' ? '#22c55e' : '#ef4444',
+          shape: tr.side === 'BUY' ? 'arrowUp' : 'arrowDown',
+          text: tr.side,
+        });
+      }
+      const tClose = Math.floor(new Date(tr.closed_at).getTime() / 1000);
+      if (tClose >= minT && tClose <= maxT) {
+        markers.push({
+          time: tClose,
+          position: 'inBar',
+          color: tr.pnl >= 0 ? '#22c55e' : '#ef4444',
+          shape: 'circle',
+          text: (tr.pnl >= 0 ? '+' : '') + '$' + tr.pnl.toFixed(2),
+        });
+      }
+    });
+
+    // Markers must be sorted by time, deduplicate same-time same-shape
+    markers.sort((a, b) => a.time - b.time || a.position.localeCompare(b.position));
+
+    // Snap marker times to nearest data point time (required by Lightweight Charts)
+    const dataTimes = data.map(d => d.time);
+    markers.forEach(m => {
+      let best = dataTimes[0];
+      for (const dt of dataTimes) { if (Math.abs(dt - m.time) < Math.abs(best - m.time)) best = dt; }
+      m.time = best;
+    });
+
+    ch.priceSeries.setMarkers(markers);
+    ch.chart.timeScale().fitContent();
+  });
+}
+
+initCharts();
+
+// ── Polling ─────────────────────────────────────────────────────────────
+function tick() {
+  $('#clock').textContent = new Date().toLocaleTimeString();
+}
+
+async function poll() {
+  try {
+    const res = await fetch('/api/state');
+    const data = await res.json();
+    updateDashboard(data);
+    updateCharts(data);
+  } catch(e) {
+    console.error('Poll error:', e);
+  }
+}
+
+setInterval(tick, 1000);
+setInterval(poll, 3000);
+tick();
+poll();
+</script>
+</body>
+</html>
