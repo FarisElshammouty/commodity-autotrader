@@ -112,6 +112,7 @@ class TradingEngine:
         self._lock = threading.Lock()
 
     # ── Price Fetching (multi-source with cloud fallback) ───────────────────
+
     def _fetch_yfinance(self, sym: str, info: dict):
         """Primary source: Yahoo Finance via yfinance."""
         ticker = yf.Ticker(info["yf"])
@@ -123,15 +124,46 @@ class TradingEngine:
         price = float(hist["Close"].iloc[-1])
         return price, hist
 
-    def _fetch_yahoo_chart_api(self, sym: str, info: dict):
-        """Fallback: Yahoo Finance chart API (direct HTTP, works on cloud)."""
-        if not _requests:
-            return None, None
+    def _fetch_yahoo_download(self, sym: str, info: dict):
+        """Fallback 1: Yahoo Finance download CSV endpoint (cloud-friendly)."""
+        import pandas as pd
+        import io
         yf_sym = info["yf"]
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}"
-        params = {"range": "2d", "interval": "5m", "includePrePost": "false"}
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        now = int(time.time())
+        period1 = now - 86400 * 3  # 3 days back
+        url = f"https://query1.finance.yahoo.com/v7/finance/download/{yf_sym}"
+        params = {"period1": period1, "period2": now, "interval": "5m", "events": "history"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
         resp = _requests.get(url, params=params, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return None, None
+        df = pd.read_csv(io.StringIO(resp.text))
+        if df.empty or "Close" not in df.columns:
+            return None, None
+        price = float(df["Close"].iloc[-1])
+        hist = df.rename(columns=str.title)  # normalize column names
+        return price, hist
+
+    def _fetch_yahoo_chart_v8(self, sym: str, info: dict):
+        """Fallback 2: Yahoo Finance chart API with cookie/crumb auth."""
+        import pandas as pd
+        yf_sym = info["yf"]
+        sess = _requests.Session()
+        sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+        # Step 1: get cookie + crumb
+        try:
+            r1 = sess.get("https://fc.yahoo.com", timeout=10, allow_redirects=True)
+        except Exception:
+            pass  # We just need the cookies
+        try:
+            crumb_resp = sess.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10)
+            crumb = crumb_resp.text.strip()
+        except Exception:
+            crumb = ""
+        # Step 2: fetch chart data
+        url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+        params = {"range": "2d", "interval": "5m", "crumb": crumb}
+        resp = sess.get(url, params=params, timeout=15)
         data = resp.json()
         result = data.get("chart", {}).get("result", [])
         if not result:
@@ -140,65 +172,54 @@ class TradingEngine:
         price = meta.get("regularMarketPrice")
         if price is None:
             return None, None
-        # Build a minimal hist-like structure for indicators
         quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
-        timestamps = result[0].get("timestamp", [])
-        if quotes and timestamps:
-            import pandas as pd
+        if quotes:
             closes = [c for c in (quotes.get("close") or []) if c is not None]
             highs = [h for h in (quotes.get("high") or []) if h is not None]
             lows = [lo for lo in (quotes.get("low") or []) if lo is not None]
             vols = [v for v in (quotes.get("volume") or []) if v is not None]
             min_len = min(len(closes), len(highs), len(lows))
             if min_len >= 20:
-                hist = pd.DataFrame({
-                    "Close": closes[:min_len],
-                    "High": highs[:min_len],
-                    "Low": lows[:min_len],
-                    "Volume": (vols[:min_len] if len(vols) >= min_len else [0]*min_len),
-                })
+                hist = pd.DataFrame({"Close": closes[:min_len], "High": highs[:min_len], "Low": lows[:min_len], "Volume": (vols[:min_len] if len(vols) >= min_len else [0]*min_len)})
                 return float(price), hist
         return float(price), None
 
-    def _fetch_google_finance(self, sym: str, info: dict):
-        """Fallback 2: scrape price from Google Finance."""
-        if not _requests:
-            return None, None
-        gf_map = {"BZ=F": "BZJ25:NYMEX", "CL=F": "CLJ25:NYMEX", "SI=F": "SIK25:COMEX", "GC=F": "GCJ25:COMEX"}
-        gf_sym = gf_map.get(info["yf"])
-        if not gf_sym:
-            return None, None
-        url = f"https://www.google.com/finance/quote/{gf_sym}"
+    def _fetch_marketaux(self, sym: str, info: dict):
+        """Fallback 3: Free commodities API via commodities-api.com or similar."""
+        # Use Yahoo Finance search as a lightweight price check
+        yf_sym = info["yf"]
+        url = f"https://query2.finance.yahoo.com/v6/finance/quote"
+        params = {"symbols": yf_sym}
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        try:
-            resp = _requests.get(url, headers=headers, timeout=10)
-            import re
-            # Look for the price in the data-last-price attribute
-            match = re.search(r'data-last-price="([\d.]+)"', resp.text)
-            if match:
-                return float(match.group(1)), None
-        except Exception:
-            pass
+        resp = _requests.get(url, params=params, headers=headers, timeout=10)
+        data = resp.json()
+        results = data.get("quoteResponse", {}).get("result", [])
+        if results:
+            price = results[0].get("regularMarketPrice")
+            if price:
+                return float(price), None
         return None, None
 
     def fetch_prices(self):
         """Fetch current prices using multiple sources with fallback chain."""
+        import pandas as pd
         for sym, info in SYMBOLS.items():
             price = None
             hist = None
-            # Try source chain: yfinance -> Yahoo Chart API -> Google Finance
             sources = [
                 ("yfinance", self._fetch_yfinance),
-                ("yahoo_chart_api", self._fetch_yahoo_chart_api),
-                ("google_finance", self._fetch_google_finance),
+                ("yahoo_download", self._fetch_yahoo_download),
+                ("yahoo_chart_v8", self._fetch_yahoo_chart_v8),
+                ("yahoo_quote", self._fetch_marketaux),
             ]
             for source_name, fetcher in sources:
                 try:
                     price, hist = fetcher(sym, info)
                     if price and price > 0:
+                        self._log(f"[{sym}] price ${price:.2f} via {source_name}", level="INFO")
                         break
                 except Exception as e:
-                    self._log(f"{source_name} error for {sym}: {e}", level="WARN")
+                    self._log(f"{source_name} error for {sym}: {type(e).__name__}: {e}", level="WARN")
                     price, hist = None, None
 
             if price and price > 0:
@@ -206,8 +227,11 @@ class TradingEngine:
                 last_high = price
                 last_low = price
                 if hist is not None and len(hist) > 0:
-                    last_high = float(hist["High"].iloc[-1])
-                    last_low = float(hist["Low"].iloc[-1])
+                    try:
+                        last_high = float(hist["High"].iloc[-1])
+                        last_low = float(hist["Low"].iloc[-1])
+                    except Exception:
+                        pass
                 self.price_history[sym].append({
                     "price": price,
                     "time": datetime.now().isoformat(),
@@ -218,8 +242,6 @@ class TradingEngine:
                 if hist is not None and len(hist) >= 20:
                     self._compute_indicators(sym, hist)
                 elif len(self.price_history[sym]) >= 20:
-                    # Build hist from price_history for indicators
-                    import pandas as pd
                     ph = list(self.price_history[sym])
                     fallback_hist = pd.DataFrame({
                         "Close": [p["price"] for p in ph],
@@ -229,7 +251,7 @@ class TradingEngine:
                     })
                     self._compute_indicators(sym, fallback_hist)
             else:
-                self._log(f"All price sources failed for {sym}", level="ERROR")
+                self._log(f"ALL sources failed for {sym}", level="ERROR")
 
     def _compute_indicators(self, symbol: str, hist):
         """Compute SMA, EMA, RSI, Bollinger Bands, MACD from price history."""

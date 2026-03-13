@@ -50,6 +50,33 @@ def health():
     return jsonify({"status": "ok", "engine": engine.status})
 
 
+@app.route("/api/debug")
+def api_debug():
+    """Debug endpoint to diagnose cloud price fetching issues."""
+    import sys
+    results = {}
+    # Test each price source for one symbol
+    sym, info = "XAUUSD", {"yf": "GC=F", "name": "Gold", "pip_value": 0.01, "lot_size": 1}
+    for name, fn in [
+        ("yfinance", engine._fetch_yfinance),
+        ("yahoo_download", engine._fetch_yahoo_download),
+        ("yahoo_chart_v8", engine._fetch_yahoo_chart_v8),
+        ("yahoo_quote", engine._fetch_marketaux),
+    ]:
+        try:
+            price, hist = fn(sym, info)
+            results[name] = {"price": price, "hist_len": len(hist) if hist is not None else 0}
+        except Exception as e:
+            results[name] = {"error": f"{type(e).__name__}: {e}"}
+    return jsonify({
+        "python": sys.version,
+        "test_symbol": "XAUUSD (GC=F)",
+        "sources": results,
+        "current_prices": engine.prices,
+        "log_tail": engine.trade_log[-10:],
+    })
+
+
 # ── Startup ────────────────────────────────────────────────────────────
 engine.start()
 
