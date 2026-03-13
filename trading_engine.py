@@ -9,12 +9,19 @@ import threading
 import time
 import json
 import uuid
+import os
+import random
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field, asdict
 from enum import Enum
 from collections import deque
 
 import yfinance as yf
+
+try:
+    import requests as _requests
+except ImportError:
+    _requests = None
 
 
 # ── Symbol Mapping ──────────────────────────────────────────────────────────
@@ -104,31 +111,125 @@ class TradingEngine:
         self.status = "INITIALIZING"
         self._lock = threading.Lock()
 
-    # ── Price Fetching ──────────────────────────────────────────────────────
+    # ── Price Fetching (multi-source with cloud fallback) ───────────────────
+    def _fetch_yfinance(self, sym: str, info: dict):
+        """Primary source: Yahoo Finance via yfinance."""
+        ticker = yf.Ticker(info["yf"])
+        hist = ticker.history(period="2d", interval="5m")
+        if hist.empty:
+            hist = ticker.history(period="5d", interval="1d")
+        if hist.empty:
+            return None, None
+        price = float(hist["Close"].iloc[-1])
+        return price, hist
+
+    def _fetch_yahoo_chart_api(self, sym: str, info: dict):
+        """Fallback: Yahoo Finance chart API (direct HTTP, works on cloud)."""
+        if not _requests:
+            return None, None
+        yf_sym = info["yf"]
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+        params = {"range": "2d", "interval": "5m", "includePrePost": "false"}
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = _requests.get(url, params=params, headers=headers, timeout=15)
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None, None
+        meta = result[0].get("meta", {})
+        price = meta.get("regularMarketPrice")
+        if price is None:
+            return None, None
+        # Build a minimal hist-like structure for indicators
+        quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+        timestamps = result[0].get("timestamp", [])
+        if quotes and timestamps:
+            import pandas as pd
+            closes = [c for c in (quotes.get("close") or []) if c is not None]
+            highs = [h for h in (quotes.get("high") or []) if h is not None]
+            lows = [lo for lo in (quotes.get("low") or []) if lo is not None]
+            vols = [v for v in (quotes.get("volume") or []) if v is not None]
+            min_len = min(len(closes), len(highs), len(lows))
+            if min_len >= 20:
+                hist = pd.DataFrame({
+                    "Close": closes[:min_len],
+                    "High": highs[:min_len],
+                    "Low": lows[:min_len],
+                    "Volume": (vols[:min_len] if len(vols) >= min_len else [0]*min_len),
+                })
+                return float(price), hist
+        return float(price), None
+
+    def _fetch_google_finance(self, sym: str, info: dict):
+        """Fallback 2: scrape price from Google Finance."""
+        if not _requests:
+            return None, None
+        gf_map = {"BZ=F": "BZJ25:NYMEX", "CL=F": "CLJ25:NYMEX", "SI=F": "SIK25:COMEX", "GC=F": "GCJ25:COMEX"}
+        gf_sym = gf_map.get(info["yf"])
+        if not gf_sym:
+            return None, None
+        url = f"https://www.google.com/finance/quote/{gf_sym}"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        try:
+            resp = _requests.get(url, headers=headers, timeout=10)
+            import re
+            # Look for the price in the data-last-price attribute
+            match = re.search(r'data-last-price="([\d.]+)"', resp.text)
+            if match:
+                return float(match.group(1)), None
+        except Exception:
+            pass
+        return None, None
+
     def fetch_prices(self):
-        """Fetch current prices for all symbols from Yahoo Finance."""
+        """Fetch current prices using multiple sources with fallback chain."""
         for sym, info in SYMBOLS.items():
-            try:
-                ticker = yf.Ticker(info["yf"])
-                # Get 1-day data with 1-minute intervals for recent price
-                hist = ticker.history(period="2d", interval="5m")
-                if hist.empty:
-                    # fallback: try daily
-                    hist = ticker.history(period="5d", interval="1d")
-                if not hist.empty:
-                    price = float(hist["Close"].iloc[-1])
-                    self.prices[sym] = price
-                    self.price_history[sym].append({
-                        "price": price,
-                        "time": datetime.now().isoformat(),
-                        "high": float(hist["High"].iloc[-1]),
-                        "low": float(hist["Low"].iloc[-1]),
-                        "volume": float(hist["Volume"].iloc[-1]) if "Volume" in hist else 0,
-                    })
-                    # Compute technical indicators
+            price = None
+            hist = None
+            # Try source chain: yfinance -> Yahoo Chart API -> Google Finance
+            sources = [
+                ("yfinance", self._fetch_yfinance),
+                ("yahoo_chart_api", self._fetch_yahoo_chart_api),
+                ("google_finance", self._fetch_google_finance),
+            ]
+            for source_name, fetcher in sources:
+                try:
+                    price, hist = fetcher(sym, info)
+                    if price and price > 0:
+                        break
+                except Exception as e:
+                    self._log(f"{source_name} error for {sym}: {e}", level="WARN")
+                    price, hist = None, None
+
+            if price and price > 0:
+                self.prices[sym] = price
+                last_high = price
+                last_low = price
+                if hist is not None and len(hist) > 0:
+                    last_high = float(hist["High"].iloc[-1])
+                    last_low = float(hist["Low"].iloc[-1])
+                self.price_history[sym].append({
+                    "price": price,
+                    "time": datetime.now().isoformat(),
+                    "high": last_high,
+                    "low": last_low,
+                    "volume": float(hist["Volume"].iloc[-1]) if (hist is not None and len(hist) > 0 and "Volume" in hist) else 0,
+                })
+                if hist is not None and len(hist) >= 20:
                     self._compute_indicators(sym, hist)
-            except Exception as e:
-                self._log(f"Price fetch error for {sym}: {e}", level="ERROR")
+                elif len(self.price_history[sym]) >= 20:
+                    # Build hist from price_history for indicators
+                    import pandas as pd
+                    ph = list(self.price_history[sym])
+                    fallback_hist = pd.DataFrame({
+                        "Close": [p["price"] for p in ph],
+                        "High": [p["high"] for p in ph],
+                        "Low": [p["low"] for p in ph],
+                        "Volume": [0] * len(ph),
+                    })
+                    self._compute_indicators(sym, fallback_hist)
+            else:
+                self._log(f"All price sources failed for {sym}", level="ERROR")
 
     def _compute_indicators(self, symbol: str, hist):
         """Compute SMA, EMA, RSI, Bollinger Bands, MACD from price history."""
