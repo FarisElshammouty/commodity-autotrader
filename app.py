@@ -12,6 +12,21 @@ from trading_engine import TradingEngine
 
 app = Flask(__name__)
 engine = TradingEngine()
+_engine_started = False
+_start_lock = threading.Lock()
+
+
+def _ensure_engine():
+    """Start engine + keep-alive on first use (survives gunicorn fork)."""
+    global _engine_started
+    if _engine_started:
+        return
+    with _start_lock:
+        if _engine_started:
+            return
+        engine.start()
+        threading.Thread(target=_keep_alive, daemon=True).start()
+        _engine_started = True
 
 
 # ── Keep-alive self-ping (prevents Render free tier from sleeping) ─────
@@ -27,6 +42,11 @@ def _keep_alive():
             _req.get(url, timeout=10)
         except Exception:
             pass
+
+
+@app.before_request
+def before_request():
+    _ensure_engine()
 
 
 @app.route("/")
@@ -55,7 +75,6 @@ def api_debug():
     """Debug endpoint to diagnose cloud price fetching issues."""
     import sys
     results = {}
-    # Test each price source for one symbol
     sym, info = "XAUUSD", {"yf": "GC=F", "name": "Gold", "pip_value": 0.01, "lot_size": 1}
     for name, fn in [
         ("yfinance", engine._fetch_yfinance),
@@ -73,17 +92,13 @@ def api_debug():
         "test_symbol": "XAUUSD (GC=F)",
         "sources": results,
         "current_prices": engine.prices,
-        "log_tail": engine.trade_log[-10:],
+        "log_tail": engine.trade_log[-20:],
+        "engine_started": _engine_started,
     })
 
 
-# ── Startup ────────────────────────────────────────────────────────────
-engine.start()
-
-# Start keep-alive pinger in background
-threading.Thread(target=_keep_alive, daemon=True).start()
-
 if __name__ == "__main__":
+    _ensure_engine()
     port = int(os.environ.get("PORT", 5000))
     print("\n" + "=" * 60)
     print(f"  TRADING DASHBOARD: http://localhost:{port}")
