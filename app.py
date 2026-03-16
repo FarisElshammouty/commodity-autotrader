@@ -70,6 +70,14 @@ def health():
     return jsonify({"status": "ok", "engine": engine.status})
 
 
+@app.route("/api/ai-status")
+def api_ai_status():
+    return jsonify({
+        "ai": engine.ai_brain.get_status(),
+        "sentiment": engine.news_sentiment,
+    })
+
+
 @app.route("/api/debug")
 def api_debug():
     """Debug endpoint to diagnose cloud price fetching issues."""

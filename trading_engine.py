@@ -23,6 +23,8 @@ try:
 except ImportError:
     _requests = None
 
+from ai_brain import AIBrain
+
 
 # ── Symbol Mapping ──────────────────────────────────────────────────────────
 SYMBOLS = {
@@ -110,6 +112,11 @@ class TradingEngine:
         self.max_drawdown = 0.0
         self.status = "INITIALIZING"
         self._lock = threading.Lock()
+
+        # AI Brain
+        self.ai_brain = AIBrain(log_callback=lambda msg, level="INFO": self._log(msg, level=level))
+        self.news_sentiment: dict = {}   # {symbol: {"score": float, "summary": str}}
+        self.ai_explanations: dict = {}  # {position_id: str}
 
     # ── Price Fetching (multi-source with cloud fallback) ───────────────────
 
@@ -466,8 +473,34 @@ class TradingEngine:
                     summaries[-1] += f"[blocked:{reason}]"
                 continue
 
+            # AI Signal Enhancement
+            ai_result = None
+            if signal and self.ai_brain.enabled:
+                composite = signal["strength"] if signal["side"] == Side.BUY else -signal["strength"]
+                if self.ai_brain.should_call_ai_signal(symbol, composite, ind):
+                    price_hist = list(self.price_history[symbol])[-20:]
+                    ai_result = self.ai_brain.enhance_signal(
+                        symbol, SYMBOLS[symbol]["name"], composite,
+                        signal["side"].value, ind, price_hist, signal["reasons"],
+                    )
+                    if ai_result and ai_result["ai_used"]:
+                        if ai_result["action"] == "HOLD" and ai_result["confidence"] > 70:
+                            self._log(f"[AI] Blocked {signal['side'].value} on {symbol}: {ai_result['reasoning']}", level="TRADE")
+                            summaries[-1] += f"[AI:HOLD@{ai_result['confidence']}%]"
+                            signal = None
+                        elif ai_result["action"] == signal["side"].value:
+                            signal["reasons"].append(f"AI confirms ({ai_result['confidence']}%): {ai_result['reasoning']}")
+                            signal["ai_confidence"] = ai_result["confidence"]
+                            summaries[-1] += f"[AI:OK@{ai_result['confidence']}%]"
+                        elif ai_result["confidence"] > 70:
+                            new_side = Side.BUY if ai_result["action"] == "BUY" else Side.SELL
+                            signal["side"] = new_side
+                            signal["reasons"].append(f"AI override ({ai_result['confidence']}%): {ai_result['reasoning']}")
+                            signal["ai_confidence"] = ai_result["confidence"]
+                            summaries[-1] += f"[AI:{ai_result['action']}@{ai_result['confidence']}%]"
+
             if signal:
-                self._execute_signal(symbol, signal, ind, price)
+                self._execute_signal(symbol, signal, ind, price, ai_result=ai_result)
 
         self._log(f"Strategy scan: {' | '.join(summaries)} | Equity=${self.equity:.2f} | Buffer=${self.equity - self.hard_floor:.2f}")
 
@@ -532,7 +565,15 @@ class TradingEngine:
             macd_score = -0.5
             reasons.append(f"MACD bearish (line={ind['macd_line']:.3f}, hist={ind['macd_histogram']:.3f})")
 
-        total = trend_score + mr_score + mom_score + macd_score
+        # ─── Factor 5: News Sentiment (AI-powered) ─────────────────────
+        sentiment_score = 0
+        sent_data = self.news_sentiment.get(symbol, {})
+        sent_val = sent_data.get("score", 0.0)
+        if abs(sent_val) > 0.3:
+            sentiment_score = sent_val * 0.75
+            reasons.append(f"News sentiment: {sent_val:+.2f}")
+
+        total = trend_score + mr_score + mom_score + macd_score + sentiment_score
 
         # Standard composite: need agreement from multiple factors
         if total >= 1.5:
@@ -553,7 +594,7 @@ class TradingEngine:
 
         return None
 
-    def _execute_signal(self, symbol: str, signal: dict, ind: dict, price: float):
+    def _execute_signal(self, symbol: str, signal: dict, ind: dict, price: float, ai_result: dict = None):
         """Open a position based on the signal with ATR-based stops."""
         atr = ind["atr"]
         side = signal["side"]
@@ -619,8 +660,21 @@ class TradingEngine:
                 "risk": round(risk_amt, 2),
                 "reward": round(reward_amt, 2),
                 "reason": reason,
+                "ai_confidence": signal.get("ai_confidence", 0),
             }
         )
+
+        # AI explanation in background thread
+        if self.ai_brain.enabled:
+            def _ai_explain():
+                explanation = self.ai_brain.explain_trade_open(
+                    symbol, SYMBOLS[symbol]["name"], side.value, price,
+                    ind, signal["reasons"], ai_result,
+                )
+                if explanation:
+                    position.reason = explanation
+                    self.ai_explanations[pos_id] = explanation
+            threading.Thread(target=_ai_explain, daemon=True).start()
 
     def _check_stops_and_targets(self):
         """Check all open positions for SL/TP hits."""
@@ -722,6 +776,27 @@ class TradingEngine:
             }
         )
 
+        # AI explanation for close in background
+        if self.ai_brain.enabled:
+            def _ai_close_explain():
+                duration = ""
+                try:
+                    opened = datetime.fromisoformat(pos.opened_at)
+                    dur = datetime.now() - opened
+                    duration = f"{dur.seconds // 3600}h {(dur.seconds % 3600) // 60}m"
+                except Exception:
+                    pass
+                explanation = self.ai_brain.explain_trade_close(
+                    pos.symbol, SYMBOLS[pos.symbol]["name"], pos.side.value,
+                    pos.entry_price, exit_price, pnl, reason, duration,
+                )
+                if explanation:
+                    closed.reason_close = explanation
+            threading.Thread(target=_ai_close_explain, daemon=True).start()
+
+        # Clean up AI explanation for this position
+        self.ai_explanations.pop(pos_id, None)
+
     def _update_equity(self):
         """Recalculate equity = balance + unrealized PnL."""
         unrealized = 0
@@ -779,6 +854,10 @@ class TradingEngine:
                 for k, v in self.indicators.items()
             },
             "price_history": {sym: list(hist) for sym, hist in self.price_history.items()},
+            "news_sentiment": self.news_sentiment,
+            "ai_enabled": self.ai_brain.enabled,
+            "ai_explanations": self.ai_explanations,
+            "ai_status": self.ai_brain.get_status() if self.ai_brain.enabled else None,
             "log": self.trade_log[-100:],
             "status": self.status,
             "timestamp": datetime.now().isoformat(),
@@ -813,8 +892,23 @@ class TradingEngine:
                     self._log(f"Strategy error: {e}", level="ERROR")
                 time.sleep(STRATEGY_INTERVAL)
 
+        def sentiment_loop():
+            """Fetch news sentiment every 5 minutes."""
+            time.sleep(45)  # initial delay — let prices load first
+            while self.running:
+                try:
+                    if self.ai_brain.enabled:
+                        self.news_sentiment = self.ai_brain.fetch_news_sentiment(SYMBOLS)
+                except Exception as e:
+                    self._log(f"Sentiment error: {e}", level="WARN")
+                time.sleep(300)  # 5 minutes
+
         threading.Thread(target=price_loop, daemon=True).start()
         threading.Thread(target=strategy_loop, daemon=True).start()
+        threading.Thread(target=sentiment_loop, daemon=True).start()
+
+        ai_status = "AI ENABLED (Groq)" if self.ai_brain.enabled else "AI disabled (no GROQ_API_KEY)"
+        self._log(ai_status)
 
     def stop(self):
         self.running = False

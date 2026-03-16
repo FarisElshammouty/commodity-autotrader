@@ -144,6 +144,32 @@
   .chart-card h3 .chart-price { color: var(--text); font-size: 14px; font-weight: 700; }
   .chart-container { width: 100%; height: 220px; }
 
+  /* ── Sentiment Row ─────────────────────────────────── */
+  .sentiment-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+  }
+  @media (max-width: 1200px) { .sentiment-row { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 700px)  { .sentiment-row { grid-template-columns: 1fr; } }
+  .sent-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+  }
+  .sent-card .sent-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .sent-card .sent-sym { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .sent-card .sent-score { font-size: 16px; font-weight: 700; }
+  .sent-card .sent-bar-bg { height: 6px; background: #1e293b; border-radius: 3px; position: relative; }
+  .sent-card .sent-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s, background 0.5s; }
+  .sent-card .sent-summary { font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+
+  /* ── AI Badge ──────────────────────────────────────── */
+  .ai-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;
+    background: rgba(139,92,246,0.15); color: #a78bfa; margin-left: 6px;
+  }
+  .ai-on { background: rgba(139,92,246,0.2); color: #a78bfa; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .ai-off { background: rgba(100,116,139,0.15); color: var(--muted); padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
   /* ── Scrollbar ──────────────────────────────────── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
@@ -156,6 +182,7 @@
 <div class="header">
   <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
   <div>
+    <span id="aiBadge" class="ai-off">AI OFF</span>
     <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
     <span style="color:var(--muted);font-size:11px;margin-left:12px" id="clock"></span>
   </div>
@@ -217,6 +244,14 @@
     <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
   </div>
 
+  <!-- News Sentiment (AI) -->
+  <div class="sentiment-row" id="sentimentRow" style="display:none">
+    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Brent Crude</span><span class="sent-score" id="ss-BRENT">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-BRENT"></div></div><div class="sent-summary" id="st-BRENT">--</div></div>
+    <div class="sent-card"><div class="sent-header"><span class="sent-sym">WTI Crude</span><span class="sent-score" id="ss-WTI">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-WTI"></div></div><div class="sent-summary" id="st-WTI">--</div></div>
+    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Silver (XAG)</span><span class="sent-score" id="ss-XAGUSD">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-XAGUSD"></div></div><div class="sent-summary" id="st-XAGUSD">--</div></div>
+    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Gold (XAU)</span><span class="sent-score" id="ss-XAUUSD">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-XAUUSD"></div></div><div class="sent-summary" id="st-XAUUSD">--</div></div>
+  </div>
+
   <!-- Main Grid -->
   <div class="grid">
     <!-- Live Prices & Indicators -->
@@ -266,9 +301,18 @@ const SYMBOL_NAMES = {
 };
 
 function updateDashboard(s) {
-  // Status
+  // Status + AI badge
   $('#statusBadge').textContent = s.status;
   $('#statusBadge').className = 'status-badge status-' + s.status;
+  const aiBadge = $('#aiBadge');
+  if (s.ai_enabled) {
+    const aiCalls = s.ai_status ? s.ai_status.calls_last_minute : 0;
+    aiBadge.textContent = `🤖 AI ON (${aiCalls}/25 rpm)`;
+    aiBadge.className = 'ai-on';
+  } else {
+    aiBadge.textContent = 'AI OFF';
+    aiBadge.className = 'ai-off';
+  }
 
   // Metrics
   $('#mBalance').textContent = '$' + fmt(s.balance);
@@ -315,6 +359,7 @@ function updateDashboard(s) {
         <span>MACD: ${ind.macd_histogram > 0 ? '+' : ''}${ind.macd_histogram.toFixed(3)}</span>
         <span>BB: ${(ind.bb_position * 100).toFixed(0)}%</span>
         <span>ROC5: ${ind.roc_5 > 0 ? '+' : ''}${ind.roc_5.toFixed(2)}%</span>
+        ${(()=>{ const sent = s.news_sentiment && s.news_sentiment[sym]; if (sent && sent.score !== undefined) { const sc = sent.score; const col = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; return `<br><span style="color:${col}">📰 Sentiment: ${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span>`; } return ''; })()}
       </div>` : ''}
     </div>`;
   });
@@ -342,7 +387,8 @@ function updateDashboard(s) {
           <strong>Take Profit:</strong> $${fmt(p.take_profit, 4)}<br>
           <strong>Unrealized P&L:</strong> <span class="${cls(p.unrealized_pnl)}">${signUsd(p.unrealized_pnl)}</span>
         </div>
-        <div class="pos-reason">${p.reason}</div>
+        <div class="pos-reason">${(s.ai_explanations && s.ai_explanations[p.id]) || p.reason}</div>
+        ${p.ai_confidence ? `<span class="ai-badge">🤖 AI ${p.ai_confidence}%</span>` : ''}
       </div>`;
     });
     $('#positions').innerHTML = posHtml;
@@ -377,6 +423,23 @@ function updateDashboard(s) {
       logHtml += `<div class="log-entry"><span class="log-time">${time}</span><span class="log-${l.level}">[${l.level}]</span> ${l.message}</div>`;
     });
     $('#logArea').innerHTML = logHtml;
+  }
+
+  // Sentiment Row
+  const sentRow = document.getElementById('sentimentRow');
+  if (s.news_sentiment && Object.keys(s.news_sentiment).length > 0) {
+    sentRow.style.display = 'grid';
+    ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'].forEach(sym => {
+      const d = s.news_sentiment[sym];
+      if (!d) return;
+      const sc = d.score || 0;
+      const el = document.getElementById('ss-' + sym);
+      const bar = document.getElementById('sb-' + sym);
+      const txt = document.getElementById('st-' + sym);
+      if (el) { el.textContent = (sc > 0 ? '+' : '') + sc.toFixed(2); el.style.color = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; }
+      if (bar) { const pct = ((sc + 1) / 2) * 100; bar.style.width = pct + '%'; bar.style.background = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; }
+      if (txt) txt.textContent = d.summary || '--';
+    });
   }
 }
 
