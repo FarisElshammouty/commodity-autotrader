@@ -108,10 +108,11 @@ def api_debug():
     results = {}
     sym, info = "XAUUSD", {"yf": "GC=F", "name": "Gold", "pip_value": 0.01, "lot_size": 1}
     for name, fn in [
-        ("yfinance", engine._fetch_yfinance),
-        ("yahoo_download", engine._fetch_yahoo_download),
+        ("yahoo_chart_simple", engine._fetch_yahoo_chart_simple),
+        ("stooq", engine._fetch_stooq),
         ("yahoo_chart_v8", engine._fetch_yahoo_chart_v8),
         ("yahoo_quote", engine._fetch_marketaux),
+        ("yfinance", engine._fetch_yfinance),
     ]:
         try:
             price, hist = engine._run_with_timeout(fn, (sym, info), timeout_sec=15)
@@ -121,6 +122,7 @@ def api_debug():
     return jsonify({
         "python": sys.version,
         "test_symbol": "XAUUSD (GC=F)",
+        "is_cloud": bool(engine._is_cloud),
         "sources": results,
         "current_prices": engine.prices,
         "log_tail": engine.trade_log[-20:],

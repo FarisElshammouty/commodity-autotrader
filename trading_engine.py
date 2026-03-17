@@ -210,7 +210,7 @@ class TradingEngine:
                 self._log(f"[HTF] Error fetching {sym}: {e}", level="WARN")
 
     def _fetch_htf_candles(self, sym: str, info: dict):
-        """Fetch 1-hour candles. Uses yfinance locally, chart API on cloud."""
+        """Fetch 1-hour candles. Uses yfinance locally, query1 chart API on cloud."""
         import pandas as pd
         yf_sym = info["yf"]
 
@@ -224,22 +224,18 @@ class TradingEngine:
             except Exception:
                 pass
 
-        # Cloud fallback: Yahoo chart v8 with 1h interval
+        # Cloud-friendly: query1 chart API (no crumb needed)
         if _requests:
             try:
-                sess = _requests.Session()
-                sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
-                try:
-                    sess.get("https://fc.yahoo.com", timeout=10, allow_redirects=True)
-                except Exception:
-                    pass
-                try:
-                    crumb = sess.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10).text.strip()
-                except Exception:
-                    crumb = ""
-                url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yf_sym}"
-                params = {"range": "1mo", "interval": "1h", "crumb": crumb}
-                resp = sess.get(url, params=params, timeout=15)
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+                params = {"range": "1mo", "interval": "1h"}
+                headers = {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "Accept": "application/json",
+                }
+                resp = _requests.get(url, params=params, headers=headers, timeout=15)
+                if resp.status_code != 200:
+                    return None
                 data = resp.json()
                 result = data.get("chart", {}).get("result", [])
                 if result:
