@@ -176,6 +176,14 @@
   }
   .ai-on { background: rgba(139,92,246,0.2); color: #a78bfa; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
   .ai-off { background: rgba(100,116,139,0.15); color: var(--muted); padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .session-badge {
+    padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 6px;
+  }
+  .session-OVERLAP { background: rgba(34,197,94,0.2); color: var(--green); }
+  .session-LONDON { background: rgba(59,130,246,0.2); color: var(--accent); }
+  .session-NY { background: rgba(59,130,246,0.2); color: var(--accent); }
+  .session-ASIAN { background: rgba(234,179,8,0.2); color: var(--yellow); }
+  .session-OFF_HOURS { background: rgba(239,68,68,0.15); color: var(--red); }
 
   /* ── Scrollbar ──────────────────────────────────── */
   ::-webkit-scrollbar { width: 6px; }
@@ -189,6 +197,7 @@
 <div class="header">
   <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
   <div>
+    <span id="sessionBadge" class="session-badge session-ASIAN">Session: ...</span>
     <span id="aiBadge" class="ai-off">AI OFF</span>
     <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
     <span style="color:var(--muted);font-size:11px;margin-left:12px" id="clock"></span>
@@ -311,6 +320,14 @@ function updateDashboard(s) {
   // Status + AI badge
   $('#statusBadge').textContent = s.status;
   $('#statusBadge').className = 'status-badge status-' + s.status;
+
+  // Session badge
+  if (s.session) {
+    const sb = $('#sessionBadge');
+    sb.textContent = s.session.label + ' (' + s.session.utc_hour + ':00 UTC)';
+    sb.className = 'session-badge session-' + s.session.name;
+  }
+
   const aiBadge = $('#aiBadge');
   if (s.ai_enabled) {
     const aiCalls = s.ai_status ? s.ai_status.calls_last_minute : 0;

@@ -46,6 +46,19 @@ STRATEGY_INTERVAL = 20             # seconds between strategy evaluations
 MAX_DAILY_LOSS = 800.0             # stop trading if daily loss exceeds this
 RISK_REWARD_RATIO = 2.0            # target 2:1 reward-to-risk
 
+# ── Trading Sessions (UTC hours) ──────────────────────────────────────────
+# Each session defines position size multipliers per asset class and signal boost
+SESSIONS = {
+    "ASIAN":     {"hours": (0, 8),   "oil_mult": 0.5, "metals_mult": 1.0, "boost": 0.0, "label": "Asian (Tokyo/Sydney)"},
+    "LONDON":    {"hours": (8, 13),  "oil_mult": 1.0, "metals_mult": 1.0, "boost": 0.0, "label": "London"},
+    "OVERLAP":   {"hours": (13, 16), "oil_mult": 1.2, "metals_mult": 1.2, "boost": 0.5, "label": "London/NY Overlap (Peak)"},
+    "NY":        {"hours": (16, 21), "oil_mult": 1.0, "metals_mult": 0.8, "boost": 0.0, "label": "New York"},
+    "OFF_HOURS": {"hours": (21, 24), "oil_mult": 0.0, "metals_mult": 0.5, "boost": 0.0, "label": "Off-Hours (Limited)"},
+}
+
+OIL_SYMBOLS = {"BRENT", "WTI"}
+METALS_SYMBOLS = {"XAUUSD", "XAGUSD"}
+
 
 class Side(str, Enum):
     BUY = "BUY"
@@ -569,6 +582,35 @@ class TradingEngine:
             trs.append(tr)
         return sum(trs) / len(trs)
 
+    # ── Session Detection ──────────────────────────────────────────────────
+    @staticmethod
+    def _get_current_session() -> dict:
+        """Determine which trading session is active based on UTC time."""
+        from datetime import timezone
+        utc_hour = datetime.now(timezone.utc).hour
+        for name, cfg in SESSIONS.items():
+            start, end = cfg["hours"]
+            if start <= utc_hour < end:
+                return {
+                    "name": name,
+                    "label": cfg["label"],
+                    "oil_mult": cfg["oil_mult"],
+                    "metals_mult": cfg["metals_mult"],
+                    "boost": cfg["boost"],
+                    "utc_hour": utc_hour,
+                }
+        # Fallback (shouldn't happen since sessions cover 0-24)
+        return {"name": "OFF_HOURS", "label": "Off-Hours", "oil_mult": 0.0, "metals_mult": 0.5, "boost": 0.0, "utc_hour": utc_hour}
+
+    def _get_session_multiplier(self, symbol: str) -> float:
+        """Get position size multiplier for a symbol based on current session."""
+        session = self._get_current_session()
+        if symbol in OIL_SYMBOLS:
+            return session["oil_mult"]
+        elif symbol in METALS_SYMBOLS:
+            return session["metals_mult"]
+        return 1.0
+
     # ── Risk Management ─────────────────────────────────────────────────────
     def _calculate_position_size(self, symbol: str, stop_distance: float) -> float:
         """Calculate position size based on risk budget and stop distance."""
@@ -677,7 +719,8 @@ class TradingEngine:
             if signal:
                 self._execute_signal(symbol, signal, ind, price, ai_result=ai_result)
 
-        self._log(f"Strategy scan: {' | '.join(summaries)} | Equity=${self.equity:.2f} | Buffer=${self.equity - self.hard_floor:.2f}")
+        session = self._get_current_session()
+        self._log(f"Strategy scan [{session['name']}]: {' | '.join(summaries)} | Equity=${self.equity:.2f} | Buffer=${self.equity - self.hard_floor:.2f}")
 
     def _generate_signal(self, symbol: str, ind: dict, price: float) -> dict | None:
         """
@@ -767,7 +810,20 @@ class TradingEngine:
                 htf_score = -0.5
                 reasons.append(f"HTF(1h): Lean bearish, RSI={htf_rsi:.1f}")
 
-        total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score
+        # ─── Factor 7: Session Boost ────────────────────────────────
+        session = self._get_current_session()
+        session_boost = session["boost"]
+        if session_boost > 0:
+            # Boost in the direction of the dominant signal
+            if trend_score + mr_score + mom_score > 0:
+                reasons.append(f"Session boost: {session['name']} (+{session_boost})")
+            elif trend_score + mr_score + mom_score < 0:
+                session_boost = -session_boost
+                reasons.append(f"Session boost: {session['name']} ({session_boost})")
+            else:
+                session_boost = 0  # No boost if no directional bias
+
+        total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score + session_boost
 
         # Standard composite: need agreement from multiple factors
         if total >= 1.5:
@@ -818,6 +874,15 @@ class TradingEngine:
         quantity = self._calculate_position_size(symbol, stop_distance)
         if quantity <= 0:
             return
+
+        # Session-based position sizing
+        session_mult = self._get_session_multiplier(symbol)
+        if session_mult <= 0:
+            self._log(f"Skipping {symbol} trade: session {self._get_current_session()['name']} blocks this asset", level="INFO")
+            return
+        if session_mult != 1.0:
+            lot_size = SYMBOLS[symbol]["lot_size"]
+            quantity = max(lot_size, round(quantity * session_mult / lot_size) * lot_size)
 
         # Final safety: simulate worst case
         worst_loss = quantity * stop_distance
@@ -1076,6 +1141,7 @@ class TradingEngine:
                 k: {ik: round(iv, 4) if isinstance(iv, float) else iv for ik, iv in v.items()}
                 for k, v in self.htf_indicators.items()
             },
+            "session": self._get_current_session(),
             "news_sentiment": self.news_sentiment,
             "ai_enabled": self.ai_brain.enabled,
             "ai_explanations": self.ai_explanations,
