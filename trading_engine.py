@@ -402,8 +402,7 @@ class TradingEngine:
         return float(price), None
 
     def _fetch_marketaux(self, sym: str, info: dict):
-        """Fallback 3: Free commodities API via commodities-api.com or similar."""
-        # Use Yahoo Finance search as a lightweight price check
+        """Fallback: Yahoo Finance quote endpoint."""
         yf_sym = info["yf"]
         url = f"https://query2.finance.yahoo.com/v6/finance/quote"
         params = {"symbols": yf_sym}
@@ -417,18 +416,103 @@ class TradingEngine:
                 return float(price), None
         return None, None
 
+    # ── Cloud-Friendly Price Sources ─────────────────────────────────────────
+
+    # Stooq symbols (BRENT not available on Stooq)
+    # Note: SI.F on Stooq is quoted in cents — divide by 100
+    _STOOQ_MAP = {"WTI": "cl.f", "XAGUSD": "si.f", "XAUUSD": "gc.f"}
+    _STOOQ_DIVISOR = {"XAGUSD": 100}  # SI.F is in cents per oz
+
+    def _fetch_stooq(self, sym: str, info: dict):
+        """Cloud-friendly: Stooq.com CSV endpoint (no auth, no IP blocking)."""
+        stooq_sym = self._STOOQ_MAP.get(sym)
+        if not stooq_sym or not _requests:
+            return None, None
+        url = f"https://stooq.com/q/l/?s={stooq_sym}&f=sd2t2ohlcv&h&e=csv"
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        resp = _requests.get(url, headers=headers, timeout=12)
+        if resp.status_code != 200:
+            return None, None
+        lines = resp.text.strip().split("\n")
+        if len(lines) < 2:
+            return None, None
+        parts = lines[1].split(",")
+        if len(parts) < 7 or parts[6] == "N/D":
+            return None, None
+        try:
+            close_price = float(parts[6])
+            if close_price <= 0:
+                return None, None
+            divisor = self._STOOQ_DIVISOR.get(sym, 1)
+            return close_price / divisor, None
+        except (ValueError, IndexError):
+            return None, None
+
+    def _fetch_yahoo_chart_simple(self, sym: str, info: dict):
+        """Cloud-friendly: Yahoo chart on query1 — no crumb needed, full OHLC data."""
+        import pandas as pd
+        if not _requests:
+            return None, None
+        yf_sym = info["yf"]
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+        params = {"range": "2d", "interval": "5m"}
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json",
+        }
+        resp = _requests.get(url, params=params, headers=headers, timeout=15)
+        if resp.status_code != 200:
+            return None, None
+        data = resp.json()
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return None, None
+        meta = result[0].get("meta", {})
+        price = meta.get("regularMarketPrice")
+        if price is None:
+            return None, None
+        quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+        if quotes:
+            closes = [c for c in (quotes.get("close") or []) if c is not None]
+            highs = [h for h in (quotes.get("high") or []) if h is not None]
+            lows = [lo for lo in (quotes.get("low") or []) if lo is not None]
+            vols = [v for v in (quotes.get("volume") or []) if v is not None]
+            min_len = min(len(closes), len(highs), len(lows))
+            if min_len >= 20:
+                hist = pd.DataFrame({
+                    "Close": closes[:min_len],
+                    "High": highs[:min_len],
+                    "Low": lows[:min_len],
+                    "Volume": vols[:min_len] if len(vols) >= min_len else [0] * min_len,
+                })
+                return float(price), hist
+        return float(price), None
+
     def fetch_prices(self):
         """Fetch current prices using multiple sources with fallback chain."""
         import pandas as pd
         for sym, info in SYMBOLS.items():
             price = None
             hist = None
-            sources = [
-                ("yfinance", self._fetch_yfinance),
-                ("yahoo_download", self._fetch_yahoo_download),
-                ("yahoo_chart_v8", self._fetch_yahoo_chart_v8),
-                ("yahoo_quote", self._fetch_marketaux),
-            ]
+
+            # Cloud deployment: prioritize sources that aren't blocked by Yahoo
+            if self._is_cloud:
+                sources = [
+                    ("yahoo_chart_simple", self._fetch_yahoo_chart_simple),
+                    ("stooq", self._fetch_stooq),
+                    ("yahoo_chart_v8", self._fetch_yahoo_chart_v8),
+                    ("yahoo_download", self._fetch_yahoo_download),
+                    ("yahoo_quote", self._fetch_marketaux),
+                ]
+            else:
+                sources = [
+                    ("yfinance", self._fetch_yfinance),
+                    ("yahoo_chart_simple", self._fetch_yahoo_chart_simple),
+                    ("yahoo_download", self._fetch_yahoo_download),
+                    ("yahoo_chart_v8", self._fetch_yahoo_chart_v8),
+                    ("stooq", self._fetch_stooq),
+                    ("yahoo_quote", self._fetch_marketaux),
+                ]
             for source_name, fetcher in sources:
                 try:
                     price, hist = self._run_with_timeout(fetcher, (sym, info), timeout_sec=20)
