@@ -104,6 +104,7 @@ class TradingEngine:
             sym: deque(maxlen=100) for sym in SYMBOLS
         }
         self.indicators: dict[str, dict] = {}
+        self.htf_indicators: dict[str, dict] = {}  # 1-hour timeframe indicators
 
         self.running = False
         self.daily_pnl = 0.0
@@ -180,6 +181,117 @@ class TradingEngine:
             })
         except Exception as e:
             print(f"[DB] Save state error: {e}")
+
+    # ── Higher Timeframe (1H) Data ─────────────────────────────────────────
+
+    def fetch_htf_data(self):
+        """Fetch 1-hour candle data for all symbols and compute HTF indicators."""
+        import pandas as pd
+        for sym, info in SYMBOLS.items():
+            try:
+                hist = self._fetch_htf_candles(sym, info)
+                if hist is not None and len(hist) >= 20:
+                    self._compute_htf_indicators(sym, hist)
+                    self._log(f"[HTF] {sym} 1H updated: {self.htf_indicators[sym].get('trend', '?')}, RSI={self.htf_indicators[sym].get('rsi', 0):.1f}")
+            except Exception as e:
+                self._log(f"[HTF] Error fetching {sym}: {e}", level="WARN")
+
+    def _fetch_htf_candles(self, sym: str, info: dict):
+        """Fetch 1-hour candles. Uses yfinance locally, chart API on cloud."""
+        import pandas as pd
+        yf_sym = info["yf"]
+
+        # Try yfinance first (local only)
+        if not self._is_cloud:
+            try:
+                ticker = yf.Ticker(yf_sym)
+                hist = ticker.history(period="1mo", interval="1h")
+                if not hist.empty and len(hist) >= 20:
+                    return hist
+            except Exception:
+                pass
+
+        # Cloud fallback: Yahoo chart v8 with 1h interval
+        if _requests:
+            try:
+                sess = _requests.Session()
+                sess.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"})
+                try:
+                    sess.get("https://fc.yahoo.com", timeout=10, allow_redirects=True)
+                except Exception:
+                    pass
+                try:
+                    crumb = sess.get("https://query2.finance.yahoo.com/v1/test/getcrumb", timeout=10).text.strip()
+                except Exception:
+                    crumb = ""
+                url = f"https://query2.finance.yahoo.com/v8/finance/chart/{yf_sym}"
+                params = {"range": "1mo", "interval": "1h", "crumb": crumb}
+                resp = sess.get(url, params=params, timeout=15)
+                data = resp.json()
+                result = data.get("chart", {}).get("result", [])
+                if result:
+                    quotes = result[0].get("indicators", {}).get("quote", [{}])[0]
+                    if quotes:
+                        closes = [c for c in (quotes.get("close") or []) if c is not None]
+                        highs = [h for h in (quotes.get("high") or []) if h is not None]
+                        lows = [lo for lo in (quotes.get("low") or []) if lo is not None]
+                        min_len = min(len(closes), len(highs), len(lows))
+                        if min_len >= 20:
+                            return pd.DataFrame({
+                                "Close": closes[:min_len],
+                                "High": highs[:min_len],
+                                "Low": lows[:min_len],
+                            })
+            except Exception:
+                pass
+
+        return None
+
+    def _compute_htf_indicators(self, symbol: str, hist):
+        """Compute trend indicators from 1-hour candles."""
+        closes = hist["Close"].values
+        if len(closes) < 20:
+            return
+
+        sma_10 = float(closes[-10:].mean())
+        sma_20 = float(closes[-20:].mean())
+        ema_12 = self._ema(closes, 12)
+        ema_26 = self._ema(closes, 26)
+        rsi = self._rsi(closes, 14)
+        macd_line = ema_12 - ema_26
+        macd_signal = macd_line * 0.8  # approximate
+        if len(closes) >= 35:
+            macd_series = []
+            for i in range(34, len(closes)):
+                e12 = self._ema(closes[:i+1], 12)
+                e26 = self._ema(closes[:i+1], 26)
+                macd_series.append(e12 - e26)
+            if len(macd_series) >= 9:
+                import numpy as np
+                macd_signal = self._ema(np.array(macd_series), 9)
+        macd_histogram = macd_line - macd_signal
+
+        # Trend determination: use SMA crossover + MACD alignment
+        trend = "NEUTRAL"
+        if sma_10 > sma_20 and macd_histogram > 0:
+            trend = "BULLISH"
+        elif sma_10 > sma_20:
+            trend = "LEAN_BULLISH"
+        elif sma_10 < sma_20 and macd_histogram < 0:
+            trend = "BEARISH"
+        elif sma_10 < sma_20:
+            trend = "LEAN_BEARISH"
+
+        self.htf_indicators[symbol] = {
+            "sma_10": sma_10,
+            "sma_20": sma_20,
+            "rsi": rsi,
+            "macd_line": macd_line,
+            "macd_signal": macd_signal,
+            "macd_histogram": macd_histogram,
+            "trend": trend,
+            "price": float(closes[-1]),
+        }
 
     # ── Price Fetching (multi-source with cloud fallback) ───────────────────
 
@@ -636,26 +748,56 @@ class TradingEngine:
             sentiment_score = sent_val * 0.75
             reasons.append(f"News sentiment: {sent_val:+.2f}")
 
-        total = trend_score + mr_score + mom_score + macd_score + sentiment_score
+        # ─── Factor 6: Higher Timeframe Filter (1H) ─────────────────
+        htf_score = 0
+        htf = self.htf_indicators.get(symbol)
+        if htf:
+            htf_trend = htf.get("trend", "NEUTRAL")
+            htf_rsi = htf.get("rsi", 50)
+            if htf_trend == "BULLISH" and htf_rsi < 70:
+                htf_score = 1.0
+                reasons.append(f"HTF(1h): BULLISH, RSI={htf_rsi:.1f}")
+            elif htf_trend == "LEAN_BULLISH":
+                htf_score = 0.5
+                reasons.append(f"HTF(1h): Lean bullish, RSI={htf_rsi:.1f}")
+            elif htf_trend == "BEARISH" and htf_rsi > 30:
+                htf_score = -1.0
+                reasons.append(f"HTF(1h): BEARISH, RSI={htf_rsi:.1f}")
+            elif htf_trend == "LEAN_BEARISH":
+                htf_score = -0.5
+                reasons.append(f"HTF(1h): Lean bearish, RSI={htf_rsi:.1f}")
+
+        total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score
 
         # Standard composite: need agreement from multiple factors
         if total >= 1.5:
-            return {"side": Side.BUY, "strength": total, "reasons": reasons}
+            signal = {"side": Side.BUY, "strength": total, "reasons": reasons}
         elif total <= -1.5:
-            return {"side": Side.SELL, "strength": abs(total), "reasons": reasons}
-
+            signal = {"side": Side.SELL, "strength": abs(total), "reasons": reasons}
         # Strong mean-reversion alone (extreme conditions)
-        if abs(mr_score) >= 1.5:
+        elif abs(mr_score) >= 1.5:
             side = Side.BUY if mr_score > 0 else Side.SELL
-            return {"side": side, "strength": abs(mr_score), "reasons": reasons}
-
+            signal = {"side": side, "strength": abs(mr_score), "reasons": reasons}
         # Strong trend + MACD alignment
-        if abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0):
+        elif abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0):
             side = Side.BUY if trend_score > 0 else Side.SELL
             reasons.append("Trend + MACD aligned")
-            return {"side": side, "strength": abs(trend_score + macd_score), "reasons": reasons}
+            signal = {"side": side, "strength": abs(trend_score + macd_score), "reasons": reasons}
+        else:
+            return None
 
-        return None
+        # ─── HTF Hard Filter: block trades against strong HTF trend ──
+        if htf:
+            htf_trend = htf.get("trend", "NEUTRAL")
+            htf_rsi = htf.get("rsi", 50)
+            if signal["side"] == Side.BUY and htf_trend == "BEARISH" and htf_rsi > 60:
+                reasons.append(f"BLOCKED by HTF(1h): strong bearish trend (RSI={htf_rsi:.1f})")
+                return None
+            if signal["side"] == Side.SELL and htf_trend == "BULLISH" and htf_rsi < 40:
+                reasons.append(f"BLOCKED by HTF(1h): strong bullish trend (RSI={htf_rsi:.1f})")
+                return None
+
+        return signal
 
     def _execute_signal(self, symbol: str, signal: dict, ind: dict, price: float, ai_result: dict = None):
         """Open a position based on the signal with ATR-based stops."""
@@ -930,6 +1072,10 @@ class TradingEngine:
                 for k, v in self.indicators.items()
             },
             "price_history": {sym: list(hist) for sym, hist in self.price_history.items()},
+            "htf_indicators": {
+                k: {ik: round(iv, 4) if isinstance(iv, float) else iv for ik, iv in v.items()}
+                for k, v in self.htf_indicators.items()
+            },
             "news_sentiment": self.news_sentiment,
             "ai_enabled": self.ai_brain.enabled,
             "ai_explanations": self.ai_explanations,
@@ -979,12 +1125,24 @@ class TradingEngine:
                     self._log(f"Sentiment error: {e}", level="WARN")
                 time.sleep(300)  # 5 minutes
 
+        def htf_loop():
+            """Fetch 1-hour timeframe data every 5 minutes for trend filtering."""
+            time.sleep(30)  # initial delay — let prices load first
+            while self.running:
+                try:
+                    self.fetch_htf_data()
+                except Exception as e:
+                    self._log(f"HTF loop error: {e}", level="WARN")
+                time.sleep(300)  # 5 minutes
+
         threading.Thread(target=price_loop, daemon=True).start()
         threading.Thread(target=strategy_loop, daemon=True).start()
         threading.Thread(target=sentiment_loop, daemon=True).start()
+        threading.Thread(target=htf_loop, daemon=True).start()
 
         ai_status = "AI ENABLED (Groq)" if self.ai_brain.enabled else "AI disabled (no GROQ_API_KEY)"
         self._log(ai_status)
+        self._log("Multi-timeframe: 1H trend filter active (updates every 5min)")
 
     def stop(self):
         self.running = False
