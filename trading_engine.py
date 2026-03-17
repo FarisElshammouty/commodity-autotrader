@@ -24,6 +24,7 @@ except ImportError:
     _requests = None
 
 from ai_brain import AIBrain
+import db
 
 
 # ── Symbol Mapping ──────────────────────────────────────────────────────────
@@ -113,10 +114,72 @@ class TradingEngine:
         self.status = "INITIALIZING"
         self._lock = threading.Lock()
 
+        self._save_counter = 0  # for periodic state saves
+
         # AI Brain
         self.ai_brain = AIBrain(log_callback=lambda msg, level="INFO": self._log(msg, level=level))
         self.news_sentiment: dict = {}   # {symbol: {"score": float, "summary": str}}
         self.ai_explanations: dict = {}  # {position_id: str}
+
+        # Database: init and restore
+        db.init_db()
+        self._restore_from_db()
+
+    def _restore_from_db(self):
+        """Restore balance, stats, and closed trades from SQLite on startup."""
+        try:
+            # Restore engine state
+            saved = db.load_state()
+            if saved:
+                self.balance = saved.get("balance", STARTING_BALANCE)
+                self.equity = saved.get("equity", self.balance)
+                self.daily_pnl = saved.get("daily_pnl", 0.0)
+                self.total_trades = int(saved.get("total_trades", 0))
+                self.winning_trades = int(saved.get("winning_trades", 0))
+                self.peak_equity = saved.get("peak_equity", self.balance)
+                self.max_drawdown = saved.get("max_drawdown", 0.0)
+                print(f"[DB] Restored state: balance=${self.balance:.2f}, {self.total_trades} trades")
+            else:
+                print("[DB] No saved state found — fresh start at $25,000")
+
+            # Restore closed trades
+            trade_rows = db.load_trades()
+            for row in trade_rows:
+                ct = ClosedTrade(
+                    id=row["id"],
+                    symbol=row["symbol"],
+                    side=row["side"],
+                    entry_price=row["entry_price"],
+                    exit_price=row["exit_price"],
+                    quantity=row["quantity"],
+                    pnl=row["pnl"],
+                    reason_open=row.get("reason_open", ""),
+                    reason_close=row.get("reason_close", ""),
+                    opened_at=row.get("opened_at", ""),
+                    closed_at=row.get("closed_at", ""),
+                )
+                self.closed_trades.append(ct)
+
+            if trade_rows:
+                print(f"[DB] Restored {len(trade_rows)} closed trades from database")
+
+        except Exception as e:
+            print(f"[DB] Restore error (starting fresh): {e}")
+
+    def _save_state_to_db(self):
+        """Persist current engine state to SQLite."""
+        try:
+            db.save_state({
+                "balance": self.balance,
+                "equity": self.equity,
+                "daily_pnl": self.daily_pnl,
+                "total_trades": self.total_trades,
+                "winning_trades": self.winning_trades,
+                "peak_equity": self.peak_equity,
+                "max_drawdown": self.max_drawdown,
+            })
+        except Exception as e:
+            print(f"[DB] Save state error: {e}")
 
     # ── Price Fetching (multi-source with cloud fallback) ───────────────────
 
@@ -760,6 +823,13 @@ class TradingEngine:
         )
         self.closed_trades.append(closed)
 
+        # Persist to database
+        try:
+            db.save_trade(closed)
+            self._save_state_to_db()
+        except Exception as e:
+            self._log(f"DB save error: {e}", level="WARN")
+
         self._log(
             f"CLOSED {pos.side.value} {pos.symbol} @ {exit_price:.4f} | "
             f"Entry: {pos.entry_price:.4f} | PnL: ${pnl:+.2f} | Reason: {reason}",
@@ -814,6 +884,12 @@ class TradingEngine:
         dd = self.peak_equity - self.equity
         if dd > self.max_drawdown:
             self.max_drawdown = dd
+
+        # Save state to DB every 10th update (~30 seconds)
+        self._save_counter += 1
+        if self._save_counter >= 10:
+            self._save_counter = 0
+            self._save_state_to_db()
 
     # ── Logging ─────────────────────────────────────────────────────────────
     def _log(self, message: str, level: str = "INFO", trade_data: dict = None):

@@ -8,7 +8,8 @@ import time
 import requests as _req
 
 from flask import Flask, render_template, jsonify
-from trading_engine import TradingEngine
+from trading_engine import TradingEngine, STARTING_BALANCE, HARD_FLOOR
+import db
 
 app = Flask(__name__)
 engine = TradingEngine()
@@ -76,6 +77,28 @@ def api_ai_status():
         "ai": engine.ai_brain.get_status(),
         "sentiment": engine.news_sentiment,
     })
+
+
+@app.route("/api/reset", methods=["POST"])
+def api_reset():
+    """Wipe database and reset engine to fresh $25,000 start."""
+    # Close all open positions first
+    for pid in list(engine.positions.keys()):
+        engine._close_position(pid, "Manual reset")
+    # Reset engine state
+    engine.balance = STARTING_BALANCE
+    engine.equity = STARTING_BALANCE
+    engine.daily_pnl = 0.0
+    engine.total_trades = 0
+    engine.winning_trades = 0
+    engine.peak_equity = STARTING_BALANCE
+    engine.max_drawdown = 0.0
+    engine.closed_trades.clear()
+    engine.trade_log.clear()
+    # Wipe database
+    db.reset_db()
+    engine._log("Engine reset to fresh $25,000 start", level="INFO")
+    return jsonify({"status": "reset", "balance": STARTING_BALANCE})
 
 
 @app.route("/api/debug")
