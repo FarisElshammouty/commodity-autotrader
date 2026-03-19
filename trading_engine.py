@@ -38,13 +38,19 @@ SYMBOLS = {
 # ── Configuration ───────────────────────────────────────────────────────────
 STARTING_BALANCE = 25000.0
 HARD_FLOOR = 24000.0
-MAX_RISK_PER_TRADE_PCT = 0.3       # 0.3% of balance per trade (~$75)
+MAX_RISK_PER_TRADE_PCT = 0.2       # 0.2% of balance per trade (~$50) — conservative
 MAX_OPEN_POSITIONS = 4
 MAX_POSITIONS_PER_SYMBOL = 1
 PRICE_FETCH_INTERVAL = 15          # seconds between price updates
 STRATEGY_INTERVAL = 20             # seconds between strategy evaluations
-MAX_DAILY_LOSS = 800.0             # stop trading if daily loss exceeds this
-RISK_REWARD_RATIO = 2.0            # target 2:1 reward-to-risk
+MAX_DAILY_LOSS = 600.0             # stop trading if daily loss exceeds this
+RISK_REWARD_RATIO = 1.5            # 1.5:1 R:R — closer TP means more trades actually hit it
+SIGNAL_THRESHOLD = 2.0             # minimum composite score to enter a trade
+ATR_STOP_MULT = 2.0               # stop loss distance = 2x ATR (wider = less noise stopouts)
+ATR_TRAIL_TRIGGER = 2.0           # only start trailing after price moves 2x ATR in our favour
+ATR_TRAIL_DIST = 1.2              # trail follows at 1.2x ATR behind price
+LOSS_COOLDOWN_SEC = 300            # 5 min cooldown per symbol after a losing trade
+CORRELATED_PAIRS = [{"BRENT", "WTI"}]  # block same-direction trades on correlated pairs
 
 # ── Trading Sessions (UTC hours) ──────────────────────────────────────────
 # Each session defines position size multipliers per asset class and signal boost
@@ -53,7 +59,7 @@ SESSIONS = {
     "LONDON":    {"hours": (8, 13),  "oil_mult": 1.0, "metals_mult": 1.0, "boost": 0.0, "label": "London"},
     "OVERLAP":   {"hours": (13, 16), "oil_mult": 1.2, "metals_mult": 1.2, "boost": 0.5, "label": "London/NY Overlap (Peak)"},
     "NY":        {"hours": (16, 21), "oil_mult": 1.0, "metals_mult": 0.8, "boost": 0.0, "label": "New York"},
-    "OFF_HOURS": {"hours": (21, 24), "oil_mult": 0.0, "metals_mult": 0.5, "boost": 0.0, "label": "Off-Hours (Limited)"},
+    "OFF_HOURS": {"hours": (21, 24), "oil_mult": 0.0, "metals_mult": 0.0, "boost": 0.0, "label": "Off-Hours (Closed)"},
 }
 
 OIL_SYMBOLS = {"BRENT", "WTI"}
@@ -129,6 +135,7 @@ class TradingEngine:
         self._lock = threading.Lock()
 
         self._save_counter = 0  # for periodic state saves
+        self._loss_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after losses
 
         # AI Brain
         self.ai_brain = AIBrain(log_callback=lambda msg, level="INFO": self._log(msg, level=level))
@@ -718,7 +725,7 @@ class TradingEngine:
             qty = max(lot_size, int(max_value / price / lot_size) * lot_size)
         return qty
 
-    def _can_open_position(self, symbol: str) -> tuple[bool, str]:
+    def _can_open_position(self, symbol: str, side: str = None) -> tuple[bool, str]:
         """Check if we're allowed to open a new position."""
         if len(self.positions) >= MAX_OPEN_POSITIONS:
             return False, "Max open positions reached"
@@ -735,6 +742,21 @@ class TradingEngine:
         if buffer < 200:
             return False, "Too close to hard floor, pausing new trades"
 
+        # Loss cooldown: don't re-enter a symbol too soon after a loss
+        cooldown_until = self._loss_cooldowns.get(symbol, 0)
+        if time.time() < cooldown_until:
+            remaining = int(cooldown_until - time.time())
+            return False, f"Loss cooldown: {remaining}s remaining for {symbol}"
+
+        # Correlation guard: block same-direction trades on correlated pairs
+        if side:
+            for pair in CORRELATED_PAIRS:
+                if symbol in pair:
+                    partner = (pair - {symbol}).pop()
+                    for pos in self.positions.values():
+                        if pos.symbol == partner and pos.side.value == side:
+                            return False, f"Correlation block: already {side} on {partner}"
+
         return True, "OK"
 
     def _check_floor_emergency(self):
@@ -743,6 +765,24 @@ class TradingEngine:
             self._log("EMERGENCY: Equity near hard floor! Closing all positions.", level="CRITICAL")
             for pid in list(self.positions.keys()):
                 self._close_position(pid, "EMERGENCY: Hard floor protection")
+
+    def _update_ratcheting_floor(self):
+        """Dynamic floor: as balance grows past milestones, ratchet the floor up to lock in gains."""
+        # For every $500 gained above starting balance, raise the floor by $400
+        # e.g. balance hits $25,500 → floor moves from $24,000 to $24,400
+        # e.g. balance hits $26,000 → floor moves to $24,800
+        gains_above_start = self.balance - self.starting_balance
+        if gains_above_start <= 0:
+            return
+        milestones_hit = int(gains_above_start / 500)
+        new_floor = HARD_FLOOR + (milestones_hit * 400)
+        if new_floor > self.hard_floor:
+            old_floor = self.hard_floor
+            self.hard_floor = new_floor
+            self._log(
+                f"FLOOR RATCHET: ${old_floor:.0f} -> ${new_floor:.0f} (balance=${self.balance:.2f}, locked ${new_floor - HARD_FLOOR:.0f} in gains)",
+                level="TRADE",
+            )
 
     # ── Trading Strategy ────────────────────────────────────────────────────
     def evaluate_strategy(self):
@@ -759,15 +799,17 @@ class TradingEngine:
 
             ind = self.indicators[symbol]
             price = self.prices[symbol]
-            can_open, reason = self._can_open_position(symbol)
 
             signal = self._generate_signal(symbol, ind, price)
             sig_str = f"{signal['side'].value}(str={signal['strength']:.1f})" if signal else "NONE"
             summaries.append(f"{symbol}={sig_str}")
 
+            if not signal:
+                continue
+
+            can_open, reason = self._can_open_position(symbol, side=signal["side"].value)
             if not can_open:
-                if signal:
-                    summaries[-1] += f"[blocked:{reason}]"
+                summaries[-1] += f"[blocked:{reason}]"
                 continue
 
             # AI Signal Enhancement
@@ -905,17 +947,17 @@ class TradingEngine:
 
         total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score + session_boost
 
-        # Standard composite: need agreement from multiple factors
-        if total >= 1.5:
+        # Standard composite: need strong agreement from multiple factors
+        if total >= SIGNAL_THRESHOLD:
             signal = {"side": Side.BUY, "strength": total, "reasons": reasons}
-        elif total <= -1.5:
+        elif total <= -SIGNAL_THRESHOLD:
             signal = {"side": Side.SELL, "strength": abs(total), "reasons": reasons}
-        # Strong mean-reversion alone (extreme conditions)
-        elif abs(mr_score) >= 1.5:
+        # Strong mean-reversion alone (extreme conditions only)
+        elif abs(mr_score) >= 1.5 and abs(total) >= 1.0:
             side = Side.BUY if mr_score > 0 else Side.SELL
             signal = {"side": side, "strength": abs(mr_score), "reasons": reasons}
-        # Strong trend + MACD alignment
-        elif abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0):
+        # Strong trend + MACD + at least one other factor
+        elif abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0) and abs(total) >= 1.5:
             side = Side.BUY if trend_score > 0 else Side.SELL
             reasons.append("Trend + MACD aligned")
             signal = {"side": side, "strength": abs(trend_score + macd_score), "reasons": reasons}
@@ -940,9 +982,9 @@ class TradingEngine:
         atr = ind["atr"]
         side = signal["side"]
 
-        # ATR-based stop loss (1.5x ATR) and take profit (3x ATR for 2:1 R:R)
-        stop_distance = atr * 1.5
-        tp_distance = atr * 1.5 * RISK_REWARD_RATIO
+        # ATR-based stop loss and take profit
+        stop_distance = atr * ATR_STOP_MULT
+        tp_distance = stop_distance * RISK_REWARD_RATIO
 
         if side == Side.BUY:
             stop_loss = price - stop_distance
@@ -1049,7 +1091,8 @@ class TradingEngine:
                     self._close_position(pid, f"Take Profit hit @ {price:.4f} (TP was {pos.take_profit})")
 
     def _trail_stops(self):
-        """Trail stop losses in the direction of profit to lock in gains."""
+        """Trail stop losses — only activates after price moves ATR_TRAIL_TRIGGER in our favour.
+        This prevents locking in break-even on small moves while real wins reach TP naturally."""
         for pos in list(self.positions.values()):
             price = self.prices.get(pos.symbol)
             if not price:
@@ -1058,22 +1101,27 @@ class TradingEngine:
             if atr <= 0:
                 continue
 
-            trail_dist = atr * 1.2  # tighter than initial stop
+            trigger_dist = atr * ATR_TRAIL_TRIGGER  # price must move this far before trailing starts
+            trail_dist = atr * ATR_TRAIL_DIST        # trail follows this far behind price
 
             if pos.side == Side.BUY:
-                # Price moved up: trail stop upward
+                profit_dist = price - pos.entry_price
+                if profit_dist < trigger_dist:
+                    continue  # not enough profit yet — let TP do its job
                 new_sl = price - trail_dist
                 if new_sl > pos.stop_loss and new_sl > pos.entry_price:
                     old_sl = pos.stop_loss
                     pos.stop_loss = round(new_sl, 4)
-                    self._log(f"Trailing SL for {pos.symbol} BUY: {old_sl} -> {pos.stop_loss} (locked profit)")
+                    self._log(f"Trailing SL {pos.symbol} BUY: {old_sl:.4f} -> {pos.stop_loss} (profit locked: +{profit_dist:.4f})")
             else:
-                # Price moved down: trail stop downward
+                profit_dist = pos.entry_price - price
+                if profit_dist < trigger_dist:
+                    continue  # not enough profit yet
                 new_sl = price + trail_dist
                 if new_sl < pos.stop_loss and new_sl < pos.entry_price:
                     old_sl = pos.stop_loss
                     pos.stop_loss = round(new_sl, 4)
-                    self._log(f"Trailing SL for {pos.symbol} SELL: {old_sl} -> {pos.stop_loss} (locked profit)")
+                    self._log(f"Trailing SL {pos.symbol} SELL: {old_sl:.4f} -> {pos.stop_loss} (profit locked: +{profit_dist:.4f})")
 
     def _close_position(self, pos_id: str, reason: str):
         """Close a position and record the trade."""
@@ -1094,6 +1142,12 @@ class TradingEngine:
             self.daily_pnl += pnl
             if pnl > 0:
                 self.winning_trades += 1
+            else:
+                # Loss cooldown: prevent re-entry on this symbol for a while
+                self._loss_cooldowns[pos.symbol] = time.time() + LOSS_COOLDOWN_SEC
+
+        # Dynamic ratcheting floor: lock in gains as balance grows
+        self._update_ratcheting_floor()
 
         closed = ClosedTrade(
             id=pos_id,
