@@ -195,12 +195,16 @@
 <body>
 
 <div class="header">
-  <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
-  <div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
+    <span style="background:rgba(59,130,246,0.15);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid rgba(59,130,246,0.3)">{{ version }}</span>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px">
+    <a href="/backtest" style="color:var(--muted);font-size:11px;text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:6px;transition:color 0.2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">Backtest</a>
     <span id="sessionBadge" class="session-badge session-ASIAN">Session: ...</span>
     <span id="aiBadge" class="ai-off">AI OFF</span>
     <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
-    <span style="color:var(--muted);font-size:11px;margin-left:12px" id="clock"></span>
+    <span style="color:var(--muted);font-size:11px;margin-left:4px" id="clock"></span>
   </div>
 </div>
 
@@ -614,5 +618,10 @@ setInterval(poll, 3000);
 tick();
 poll();
 </script>
+
+<div style="text-align:center;padding:24px 0 16px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);margin-top:24px">
+  Made with ❤️ by <a href="https://github.com/FarisElshammouty" target="_blank" style="color:var(--accent);text-decoration:none">Faris</a>
+  &nbsp;·&nbsp; {{ version }}
+</div>
 </body>
 </html>

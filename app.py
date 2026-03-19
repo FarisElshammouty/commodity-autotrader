@@ -7,11 +7,14 @@ import threading
 import time
 import requests as _req
 
-from flask import Flask, render_template, jsonify
+from flask import Flask, render_template, jsonify, request
 from trading_engine import TradingEngine, STARTING_BALANCE, HARD_FLOOR
 import db
+import backtest as bt
 
 app = Flask(__name__)
+
+VERSION = "v2.0"
 engine = TradingEngine()
 _engine_started = False
 _start_lock = threading.Lock()
@@ -52,12 +55,42 @@ def before_request():
 
 @app.route("/")
 def dashboard():
-    return render_template("dashboard.html")
+    return render_template("dashboard.html", version=VERSION)
+
+
+@app.route("/backtest")
+def backtest_page():
+    return render_template("backtest.html", version=VERSION)
+
+
+@app.route("/api/backtest/run")
+def api_backtest_run():
+    """Run backtest for all symbols using current live parameters."""
+    days = int(request.args.get("days", 180))
+    days = min(max(days, 30), 365)  # clamp 30–365
+    syms = request.args.get("symbols", "").strip()
+    symbol_list = [s.strip().upper() for s in syms.split(",") if s.strip()] if syms else None
+    result = bt.run_full_backtest(symbols=symbol_list, period_days=days)
+    return jsonify(result)
+
+
+@app.route("/api/backtest/optimize")
+def api_backtest_optimize():
+    """Run walk-forward optimization for a single symbol."""
+    symbol = request.args.get("symbol", "XAUUSD").upper()
+    if symbol not in bt.SYMBOLS:
+        return jsonify({"error": f"Unknown symbol: {symbol}"}), 400
+    days = int(request.args.get("days", 180))
+    days = min(max(days, 90), 365)
+    result = bt.run_optimization(symbol, period_days=days)
+    return jsonify(result)
 
 
 @app.route("/api/state")
 def api_state():
-    return jsonify(engine.get_state())
+    state = engine.get_state()
+    state["version"] = VERSION
+    return jsonify(state)
 
 
 @app.route("/api/stop", methods=["POST"])
