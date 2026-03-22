@@ -76,7 +76,7 @@
   }
 
   /* ── Prices Grid ────────────────────────────────── */
-  .prices-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .prices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
   .price-card {
     background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
   }
@@ -138,8 +138,9 @@
   .charts-row {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
   }
-  @media (max-width: 1200px) { .charts-row { grid-template-columns: repeat(2, 1fr); } }
-  @media (max-width: 700px)  { .charts-row { grid-template-columns: 1fr; } }
+  @media (max-width: 1400px) { .charts-row { grid-template-columns: repeat(3, 1fr) !important; } }
+  @media (max-width: 1000px) { .charts-row { grid-template-columns: repeat(2, 1fr) !important; } }
+  @media (max-width: 700px)  { .charts-row { grid-template-columns: 1fr !important; } }
   .chart-card {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
   }
@@ -149,7 +150,7 @@
     display: flex; justify-content: space-between; align-items: center;
   }
   .chart-card h3 .chart-price { color: var(--text); font-size: 14px; font-weight: 700; }
-  .chart-container { width: 100%; height: 220px; }
+  .chart-container { width: 100%; height: 180px; }
 
   /* ── Sentiment Row ─────────────────────────────────── */
   .sentiment-row {
@@ -196,7 +197,7 @@
 
 <div class="header">
   <div style="display:flex;align-items:center;gap:12px">
-    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">BRENT | WTI | XAGUSD | XAUUSD</small></h1>
+    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">14 Instruments</small></h1>
     <span style="background:rgba(59,130,246,0.15);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid rgba(59,130,246,0.3)">{{ version }}</span>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
@@ -270,21 +271,42 @@
     </div>
   </div>
 
-  <!-- Price Charts -->
-  <div class="charts-row">
+  <!-- Price Charts — Energy -->
+  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:4px">Energy</div>
+  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
     <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
     <div class="chart-card"><h3><span>WTI Crude (WTI)</span><span class="chart-price" id="cp-WTI">--</span></h3><div class="chart-container" id="cc-WTI"></div></div>
-    <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
-    <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
+    <div class="chart-card"><h3><span>Natural Gas (NGAS)</span><span class="chart-price" id="cp-NGAS">--</span></h3><div class="chart-container" id="cc-NGAS"></div></div>
   </div>
 
-  <!-- News Sentiment (AI) -->
-  <div class="sentiment-row" id="sentimentRow" style="display:none">
-    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Brent Crude</span><span class="sent-score" id="ss-BRENT">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-BRENT"></div></div><div class="sent-summary" id="st-BRENT">--</div></div>
-    <div class="sent-card"><div class="sent-header"><span class="sent-sym">WTI Crude</span><span class="sent-score" id="ss-WTI">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-WTI"></div></div><div class="sent-summary" id="st-WTI">--</div></div>
-    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Silver (XAG)</span><span class="sent-score" id="ss-XAGUSD">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-XAGUSD"></div></div><div class="sent-summary" id="st-XAGUSD">--</div></div>
-    <div class="sent-card"><div class="sent-header"><span class="sent-sym">Gold (XAU)</span><span class="sent-score" id="ss-XAUUSD">0.00</span></div><div class="sent-bar-bg"><div class="sent-bar-fill" id="sb-XAUUSD"></div></div><div class="sent-summary" id="st-XAUUSD">--</div></div>
+  <!-- Price Charts — Metals -->
+  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Metals</div>
+  <div class="charts-row" style="grid-template-columns:repeat(5,1fr)">
+    <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
+    <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
+    <div class="chart-card"><h3><span>Platinum</span><span class="chart-price" id="cp-PLATINUM">--</span></h3><div class="chart-container" id="cc-PLATINUM"></div></div>
+    <div class="chart-card"><h3><span>Palladium</span><span class="chart-price" id="cp-PALLADIUM">--</span></h3><div class="chart-container" id="cc-PALLADIUM"></div></div>
+    <div class="chart-card"><h3><span>Copper</span><span class="chart-price" id="cp-COPPER">--</span></h3><div class="chart-container" id="cc-COPPER"></div></div>
   </div>
+
+  <!-- Price Charts — Forex -->
+  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Forex</div>
+  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="chart-card"><h3><span>EUR/USD</span><span class="chart-price" id="cp-EURUSD">--</span></h3><div class="chart-container" id="cc-EURUSD"></div></div>
+    <div class="chart-card"><h3><span>GBP/USD</span><span class="chart-price" id="cp-GBPUSD">--</span></h3><div class="chart-container" id="cc-GBPUSD"></div></div>
+    <div class="chart-card"><h3><span>USD/JPY</span><span class="chart-price" id="cp-USDJPY">--</span></h3><div class="chart-container" id="cc-USDJPY"></div></div>
+  </div>
+
+  <!-- Price Charts — Indices -->
+  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Indices</div>
+  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="chart-card"><h3><span>S&P 500</span><span class="chart-price" id="cp-SP500">--</span></h3><div class="chart-container" id="cc-SP500"></div></div>
+    <div class="chart-card"><h3><span>Nasdaq 100</span><span class="chart-price" id="cp-NASDAQ">--</span></h3><div class="chart-container" id="cc-NASDAQ"></div></div>
+    <div class="chart-card"><h3><span>Dow Jones</span><span class="chart-price" id="cp-DOW">--</span></h3><div class="chart-container" id="cc-DOW"></div></div>
+  </div>
+
+  <!-- News Sentiment (AI) — dynamically populated -->
+  <div class="sentiment-row" id="sentimentRow" style="display:none;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
 
   <!-- Main Grid -->
   <div class="grid">
@@ -328,10 +350,16 @@ const signUsd = n => (n >= 0 ? '+' : '-') + '$' + fmt(Math.abs(n));
 const cls = n => n >= 0 ? 'positive' : 'negative';
 
 const SYMBOL_NAMES = {
-  'BRENT': 'Brent Crude',
-  'WTI': 'WTI Crude',
-  'XAGUSD': 'Silver',
-  'XAUUSD': 'Gold'
+  'BRENT': 'Brent Crude', 'WTI': 'WTI Crude', 'NGAS': 'Natural Gas',
+  'XAUUSD': 'Gold', 'XAGUSD': 'Silver', 'PLATINUM': 'Platinum', 'PALLADIUM': 'Palladium', 'COPPER': 'Copper',
+  'EURUSD': 'EUR/USD', 'GBPUSD': 'GBP/USD', 'USDJPY': 'USD/JPY',
+  'SP500': 'S&P 500', 'NASDAQ': 'Nasdaq 100', 'DOW': 'Dow Jones',
+};
+const SYMBOL_DECIMALS = {
+  'XAUUSD': 2, 'XAGUSD': 3, 'BRENT': 2, 'WTI': 2, 'NGAS': 3,
+  'PLATINUM': 2, 'PALLADIUM': 2, 'COPPER': 4,
+  'EURUSD': 5, 'GBPUSD': 5, 'USDJPY': 3,
+  'SP500': 2, 'NASDAQ': 2, 'DOW': 2,
 };
 
 function updateDashboard(s) {
@@ -379,7 +407,7 @@ function updateDashboard(s) {
   $('#gaugeLabel').textContent = '$' + fmt(s.equity) + ' / $24,000 floor';
 
   // Prices
-  const symbols = ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'];
+  const symbols = Object.keys(SYMBOL_NAMES);
   let pricesHtml = '';
   symbols.forEach(sym => {
     const price = s.prices[sym];
@@ -391,7 +419,7 @@ function updateDashboard(s) {
     const trendCls = ind ? 'trend-' + ind.trend : '';
     pricesHtml += `<div class="price-card">
       <div class="sym">${SYMBOL_NAMES[sym]} (${sym})</div>
-      <div class="prc">$${fmt(price, sym.includes('XAU') ? 2 : sym.includes('XAG') ? 3 : 2)}</div>
+      <div class="prc">$${fmt(price, SYMBOL_DECIMALS[sym] || 2)}</div>
       ${ind ? `<div class="ind">
         <span class="${trendCls}">Trend: ${ind.trend}</span><br>
         <span>RSI: ${ind.rsi.toFixed(1)}</span>
@@ -468,26 +496,29 @@ function updateDashboard(s) {
     $('#logArea').innerHTML = logHtml;
   }
 
-  // Sentiment Row
+  // Sentiment Row (dynamic)
   const sentRow = document.getElementById('sentimentRow');
   if (s.news_sentiment && Object.keys(s.news_sentiment).length > 0) {
     sentRow.style.display = 'grid';
-    ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'].forEach(sym => {
-      const d = s.news_sentiment[sym];
+    let sentHtml = '';
+    Object.entries(s.news_sentiment).forEach(([sym, d]) => {
       if (!d) return;
       const sc = d.score || 0;
-      const el = document.getElementById('ss-' + sym);
-      const bar = document.getElementById('sb-' + sym);
-      const txt = document.getElementById('st-' + sym);
-      if (el) { el.textContent = (sc > 0 ? '+' : '') + sc.toFixed(2); el.style.color = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; }
-      if (bar) { const pct = ((sc + 1) / 2) * 100; bar.style.width = pct + '%'; bar.style.background = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; }
-      if (txt) txt.textContent = d.summary || '--';
+      const col = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)';
+      const pct = ((sc + 1) / 2) * 100;
+      sentHtml += `<div class="sent-card">
+        <div class="sent-header"><span class="sent-sym">${SYMBOL_NAMES[sym] || sym}</span>
+        <span class="sent-score" style="color:${col}">${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span></div>
+        <div class="sent-bar-bg"><div class="sent-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+        <div class="sent-summary">${d.summary || '--'}</div>
+      </div>`;
     });
+    sentRow.innerHTML = sentHtml;
   }
 }
 
 // ── Charts ──────────────────────────────────────────────────────────────
-const SYMS = ['BRENT', 'WTI', 'XAGUSD', 'XAUUSD'];
+const SYMS = Object.keys(SYMBOL_NAMES);
 const chartState = {};
 
 function initCharts() {
@@ -516,7 +547,7 @@ function updateCharts(s) {
 
     // Update header price
     const cpEl = document.getElementById('cp-' + sym);
-    if (cpEl && price) cpEl.textContent = '$' + fmt(price, sym.includes('XAU') ? 2 : sym.includes('XAG') ? 3 : 2);
+    if (cpEl && price) cpEl.textContent = '$' + fmt(price, SYMBOL_DECIMALS[sym] || 2);
 
     if (!history.length) return;
 

@@ -30,10 +30,24 @@ except ImportError:
 
 # ── Symbol config (mirrors trading_engine.py) ───────────────────────────────
 SYMBOLS = {
-    "BRENT":  {"yf": "BZ=F", "name": "Brent Crude Oil",    "lot_size": 10,  "spread_pct": 0.03},
-    "WTI":    {"yf": "CL=F", "name": "WTI Crude Oil",      "lot_size": 10,  "spread_pct": 0.03},
-    "XAGUSD": {"yf": "SI=F", "name": "Silver (XAG/USD)",   "lot_size": 50,  "spread_pct": 0.05},
-    "XAUUSD": {"yf": "GC=F", "name": "Gold (XAU/USD)",     "lot_size": 1,   "spread_pct": 0.02},
+    # ── Energy ──
+    "BRENT":    {"yf": "BZ=F",      "name": "Brent Crude Oil",     "lot_size": 10,   "spread_pct": 0.03},
+    "WTI":      {"yf": "CL=F",      "name": "WTI Crude Oil",       "lot_size": 10,   "spread_pct": 0.03},
+    "NGAS":     {"yf": "NG=F",      "name": "Natural Gas",         "lot_size": 100,  "spread_pct": 0.05},
+    # ── Metals ──
+    "XAUUSD":   {"yf": "GC=F",      "name": "Gold (XAU/USD)",      "lot_size": 1,    "spread_pct": 0.02},
+    "XAGUSD":   {"yf": "SI=F",      "name": "Silver (XAG/USD)",    "lot_size": 50,   "spread_pct": 0.05},
+    "PLATINUM": {"yf": "PL=F",      "name": "Platinum",            "lot_size": 1,    "spread_pct": 0.04},
+    "PALLADIUM":{"yf": "PA=F",      "name": "Palladium",           "lot_size": 1,    "spread_pct": 0.05},
+    "COPPER":   {"yf": "HG=F",      "name": "Copper",              "lot_size": 100,  "spread_pct": 0.03},
+    # ── Forex ──
+    "EURUSD":   {"yf": "EURUSD=X",  "name": "EUR/USD",             "lot_size": 1000, "spread_pct": 0.01},
+    "GBPUSD":   {"yf": "GBPUSD=X",  "name": "GBP/USD",             "lot_size": 1000, "spread_pct": 0.015},
+    "USDJPY":   {"yf": "USDJPY=X",  "name": "USD/JPY",             "lot_size": 1000, "spread_pct": 0.01},
+    # ── Indices ──
+    "SP500":    {"yf": "ES=F",      "name": "S&P 500 Futures",     "lot_size": 1,    "spread_pct": 0.01},
+    "NASDAQ":   {"yf": "NQ=F",      "name": "Nasdaq 100 Futures",  "lot_size": 1,    "spread_pct": 0.01},
+    "DOW":      {"yf": "YM=F",      "name": "Dow Jones Futures",   "lot_size": 1,    "spread_pct": 0.01},
 }
 
 # Spread = realistic bid/ask cost as % of price

@@ -1,6 +1,7 @@
 """
-Automated Commodity Trading Engine
-Trades: BRENT, WTI, XAGUSD (Silver), XAUUSD (Gold)
+Automated Multi-Asset Trading Engine
+Trades: Commodities (BRENT, WTI, NGAS, COPPER, XAGUSD, XAUUSD, PLATINUM, PALLADIUM)
+        Forex (EURUSD, GBPUSD, USDJPY) | Indices (SP500, NASDAQ, DOW)
 Starting balance: $25,000 | Hard floor: $24,000
 Strategy: Multi-indicator momentum + mean reversion with strict risk management
 """
@@ -28,18 +29,33 @@ import db
 
 
 # ── Symbol Mapping ──────────────────────────────────────────────────────────
+# asset_class determines session multipliers and correlation grouping
 SYMBOLS = {
-    "BRENT": {"yf": "BZ=F", "name": "Brent Crude Oil", "pip_value": 0.01, "lot_size": 10},
-    "WTI":   {"yf": "CL=F", "name": "WTI Crude Oil",   "pip_value": 0.01, "lot_size": 10},
-    "XAGUSD": {"yf": "SI=F", "name": "Silver (XAG/USD)", "pip_value": 0.001, "lot_size": 50},
-    "XAUUSD": {"yf": "GC=F", "name": "Gold (XAU/USD)",   "pip_value": 0.01, "lot_size": 1},
+    # ── Energy ──
+    "BRENT":    {"yf": "BZ=F",      "name": "Brent Crude Oil",     "pip_value": 0.01,  "lot_size": 10,  "asset_class": "oil"},
+    "WTI":      {"yf": "CL=F",      "name": "WTI Crude Oil",       "pip_value": 0.01,  "lot_size": 10,  "asset_class": "oil"},
+    "NGAS":     {"yf": "NG=F",      "name": "Natural Gas",         "pip_value": 0.001, "lot_size": 100, "asset_class": "energy"},
+    # ── Metals ──
+    "XAUUSD":   {"yf": "GC=F",      "name": "Gold (XAU/USD)",      "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
+    "XAGUSD":   {"yf": "SI=F",      "name": "Silver (XAG/USD)",    "pip_value": 0.001, "lot_size": 50,  "asset_class": "metals"},
+    "PLATINUM": {"yf": "PL=F",      "name": "Platinum",            "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
+    "PALLADIUM":{"yf": "PA=F",      "name": "Palladium",           "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
+    "COPPER":   {"yf": "HG=F",      "name": "Copper",              "pip_value": 0.0001,"lot_size": 100, "asset_class": "metals"},
+    # ── Forex ──
+    "EURUSD":   {"yf": "EURUSD=X",  "name": "EUR/USD",             "pip_value": 0.0001,"lot_size": 1000,"asset_class": "forex"},
+    "GBPUSD":   {"yf": "GBPUSD=X",  "name": "GBP/USD",             "pip_value": 0.0001,"lot_size": 1000,"asset_class": "forex"},
+    "USDJPY":   {"yf": "USDJPY=X",  "name": "USD/JPY",             "pip_value": 0.01,  "lot_size": 1000,"asset_class": "forex", "pnl_ccy": "JPY"},
+    # ── Indices ──
+    "SP500":    {"yf": "ES=F",      "name": "S&P 500 Futures",     "pip_value": 0.25,  "lot_size": 1,   "asset_class": "indices"},
+    "NASDAQ":   {"yf": "NQ=F",      "name": "Nasdaq 100 Futures",  "pip_value": 0.25,  "lot_size": 1,   "asset_class": "indices"},
+    "DOW":      {"yf": "YM=F",      "name": "Dow Jones Futures",   "pip_value": 1.0,   "lot_size": 1,   "asset_class": "indices"},
 }
 
 # ── Configuration ───────────────────────────────────────────────────────────
 STARTING_BALANCE = 25000.0
 HARD_FLOOR = 24000.0
-MAX_RISK_PER_TRADE_PCT = 0.2       # 0.2% of balance per trade (~$50) — conservative
-MAX_OPEN_POSITIONS = 4
+MAX_RISK_PER_TRADE_PCT = 0.15      # 0.15% per trade — slightly more conservative with more symbols
+MAX_OPEN_POSITIONS = 6             # allow more positions across 15 instruments
 MAX_POSITIONS_PER_SYMBOL = 1
 PRICE_FETCH_INTERVAL = 15          # seconds between price updates
 STRATEGY_INTERVAL = 20             # seconds between strategy evaluations
@@ -50,20 +66,76 @@ ATR_STOP_MULT = 2.0               # stop loss distance = 2x ATR (wider = less no
 ATR_TRAIL_TRIGGER = 2.0           # only start trailing after price moves 2x ATR in our favour
 ATR_TRAIL_DIST = 1.2              # trail follows at 1.2x ATR behind price
 LOSS_COOLDOWN_SEC = 300            # 5 min cooldown per symbol after a losing trade
-CORRELATED_PAIRS = [{"BRENT", "WTI"}]  # block same-direction trades on correlated pairs
+MAX_POSITIONS_PER_CLASS = 2        # max 2 positions in same asset class at once
+
+# ── Correlation Groups ─────────────────────────────────────────────────────
+# Block same-direction trades on highly correlated pairs
+CORRELATED_PAIRS = [
+    {"BRENT", "WTI"},           # crude oil grades move together
+    {"XAUUSD", "XAGUSD"},      # precious metals correlate strongly
+    {"PLATINUM", "PALLADIUM"},  # PGMs correlate
+    {"EURUSD", "GBPUSD"},      # both are anti-USD, move together
+    {"SP500", "NASDAQ"},        # US equity indices move together
+    {"SP500", "DOW"},           # US equity indices move together
+]
 
 # ── Trading Sessions (UTC hours) ──────────────────────────────────────────
 # Each session defines position size multipliers per asset class and signal boost
+# Multipliers: 0.0 = blocked, 0.5 = half size, 1.0 = full, 1.2 = boosted
 SESSIONS = {
-    "ASIAN":     {"hours": (0, 8),   "oil_mult": 0.5, "metals_mult": 1.0, "boost": 0.0, "label": "Asian (Tokyo/Sydney)"},
-    "LONDON":    {"hours": (8, 13),  "oil_mult": 1.0, "metals_mult": 1.0, "boost": 0.0, "label": "London"},
-    "OVERLAP":   {"hours": (13, 16), "oil_mult": 1.2, "metals_mult": 1.2, "boost": 0.5, "label": "London/NY Overlap (Peak)"},
-    "NY":        {"hours": (16, 21), "oil_mult": 1.0, "metals_mult": 0.8, "boost": 0.0, "label": "New York"},
-    "OFF_HOURS": {"hours": (21, 24), "oil_mult": 0.0, "metals_mult": 0.0, "boost": 0.0, "label": "Off-Hours (Closed)"},
+    "ASIAN": {
+        "hours": (0, 8),
+        "label": "Asian (Tokyo/Sydney)",
+        "boost": 0.0,
+        "class_mult": {
+            "oil": 0.5, "energy": 0.5, "metals": 1.0,
+            "forex": 0.7, "indices": 0.5,
+        },
+    },
+    "LONDON": {
+        "hours": (8, 13),
+        "label": "London",
+        "boost": 0.0,
+        "class_mult": {
+            "oil": 1.0, "energy": 1.0, "metals": 1.0,
+            "forex": 1.0, "indices": 0.8,
+        },
+    },
+    "OVERLAP": {
+        "hours": (13, 16),
+        "label": "London/NY Overlap (Peak)",
+        "boost": 0.5,
+        "class_mult": {
+            "oil": 1.2, "energy": 1.2, "metals": 1.2,
+            "forex": 1.2, "indices": 1.2,
+        },
+    },
+    "NY": {
+        "hours": (16, 21),
+        "label": "New York",
+        "boost": 0.0,
+        "class_mult": {
+            "oil": 1.0, "energy": 1.0, "metals": 0.8,
+            "forex": 1.0, "indices": 1.0,
+        },
+    },
+    "OFF_HOURS": {
+        "hours": (21, 24),
+        "label": "Off-Hours (Closed)",
+        "boost": 0.0,
+        "class_mult": {
+            "oil": 0.0, "energy": 0.0, "metals": 0.0,
+            "forex": 0.3, "indices": 0.0,  # forex still trades but reduced
+        },
+    },
 }
 
-OIL_SYMBOLS = {"BRENT", "WTI"}
-METALS_SYMBOLS = {"XAUUSD", "XAGUSD"}
+# Asset class sets (derived from SYMBOLS for quick lookup)
+OIL_SYMBOLS = {s for s, i in SYMBOLS.items() if i["asset_class"] == "oil"}
+METALS_SYMBOLS = {s for s, i in SYMBOLS.items() if i["asset_class"] == "metals"}
+ENERGY_SYMBOLS = {s for s, i in SYMBOLS.items() if i["asset_class"] == "energy"}
+FOREX_SYMBOLS = {s for s, i in SYMBOLS.items() if i["asset_class"] == "forex"}
+INDICES_SYMBOLS = {s for s, i in SYMBOLS.items() if i["asset_class"] == "indices"}
 
 
 class Side(str, Enum):
@@ -430,7 +502,11 @@ class TradingEngine:
 
     # Stooq symbols (BRENT not available on Stooq)
     # Note: SI.F on Stooq is quoted in cents — divide by 100
-    _STOOQ_MAP = {"WTI": "cl.f", "XAGUSD": "si.f", "XAUUSD": "gc.f"}
+    _STOOQ_MAP = {
+        "WTI": "cl.f", "XAGUSD": "si.f", "XAUUSD": "gc.f",
+        "NGAS": "ng.f", "COPPER": "hg.f", "PLATINUM": "pl.f", "PALLADIUM": "pa.f",
+        "EURUSD": "eurusd", "GBPUSD": "gbpusd", "USDJPY": "usdjpy",
+    }
     _STOOQ_DIVISOR = {"XAGUSD": 100}  # SI.F is in cents per oz
 
     def _fetch_stooq(self, sym: str, info: dict):
@@ -760,22 +836,20 @@ class TradingEngine:
                 return {
                     "name": name,
                     "label": cfg["label"],
-                    "oil_mult": cfg["oil_mult"],
-                    "metals_mult": cfg["metals_mult"],
                     "boost": cfg["boost"],
+                    "class_mult": cfg["class_mult"],
                     "utc_hour": utc_hour,
                 }
         # Fallback (shouldn't happen since sessions cover 0-24)
-        return {"name": "OFF_HOURS", "label": "Off-Hours", "oil_mult": 0.0, "metals_mult": 0.5, "boost": 0.0, "utc_hour": utc_hour}
+        return {"name": "OFF_HOURS", "label": "Off-Hours", "boost": 0.0,
+                "class_mult": {"oil": 0.0, "energy": 0.0, "metals": 0.0, "forex": 0.3, "indices": 0.0},
+                "utc_hour": utc_hour}
 
     def _get_session_multiplier(self, symbol: str) -> float:
         """Get position size multiplier for a symbol based on current session."""
         session = self._get_current_session()
-        if symbol in OIL_SYMBOLS:
-            return session["oil_mult"]
-        elif symbol in METALS_SYMBOLS:
-            return session["metals_mult"]
-        return 1.0
+        asset_class = SYMBOLS.get(symbol, {}).get("asset_class", "metals")
+        return session.get("class_mult", {}).get(asset_class, 1.0)
 
     # ── Risk Management ─────────────────────────────────────────────────────
     def _calculate_position_size(self, symbol: str, stop_distance: float) -> float:
@@ -813,10 +887,24 @@ class TradingEngine:
     def _can_open_position(self, symbol: str, side: str = None) -> tuple[bool, str]:
         """Check if we're allowed to open a new position."""
         # Weekend guard: markets closed Saturday & Sunday (UTC)
+        # Forex opens Sunday 22:00 UTC, closes Friday 22:00 UTC
+        # Commodities/Indices: closed all of Saturday & Sunday
         from datetime import datetime, timezone
-        day_of_week = datetime.now(timezone.utc).weekday()  # 0=Mon, 5=Sat, 6=Sun
-        if day_of_week >= 5:
-            return False, "Markets closed (weekend)"
+        now = datetime.now(timezone.utc)
+        day_of_week = now.weekday()  # 0=Mon, 5=Sat, 6=Sun
+        utc_hour = now.hour
+        asset_class = SYMBOLS.get(symbol, {}).get("asset_class", "")
+        if asset_class == "forex":
+            # Forex: closed from Friday 22:00 UTC to Sunday 22:00 UTC
+            if day_of_week == 5:  # Saturday — always closed
+                return False, "Forex closed (weekend)"
+            if day_of_week == 4 and utc_hour >= 22:  # Friday after 22:00
+                return False, "Forex closed (weekend — Friday close)"
+            if day_of_week == 6 and utc_hour < 22:  # Sunday before 22:00
+                return False, "Forex closed (weekend — opens Sunday 22:00 UTC)"
+        else:
+            if day_of_week >= 5:
+                return False, "Markets closed (weekend)"
 
         if len(self.positions) >= MAX_OPEN_POSITIONS:
             return False, "Max open positions reached"
@@ -824,6 +912,13 @@ class TradingEngine:
         sym_count = sum(1 for p in self.positions.values() if p.symbol == symbol)
         if sym_count >= MAX_POSITIONS_PER_SYMBOL:
             return False, f"Max positions for {symbol} reached"
+
+        # Asset class concentration limit
+        asset_class = SYMBOLS.get(symbol, {}).get("asset_class", "")
+        class_count = sum(1 for p in self.positions.values()
+                         if SYMBOLS.get(p.symbol, {}).get("asset_class") == asset_class)
+        if class_count >= MAX_POSITIONS_PER_CLASS:
+            return False, f"Max positions for {asset_class} class reached ({class_count}/{MAX_POSITIONS_PER_CLASS})"
 
         if self.daily_pnl <= -MAX_DAILY_LOSS:
             return False, "Daily loss limit reached"
@@ -1257,6 +1352,7 @@ class TradingEngine:
             pnl = (price - pos.entry_price) * close_qty
         else:
             pnl = (pos.entry_price - price) * close_qty
+        pnl = self._convert_pnl_to_usd(pos.symbol, pnl, price)
 
         with self._lock:
             pos.quantity -= close_qty
@@ -1349,6 +1445,13 @@ class TradingEngine:
                 hours = elapsed / 3600
                 self._close_position(pid, f"Time exit: {hours:.1f}h elapsed, only {move:.4f} move vs {atr:.4f} ATR target")
 
+    def _convert_pnl_to_usd(self, symbol: str, pnl: float, exit_price: float) -> float:
+        """Convert PnL to USD for non-USD denominated pairs (e.g., USDJPY)."""
+        info = SYMBOLS.get(symbol, {})
+        if info.get("pnl_ccy") == "JPY" and exit_price > 0:
+            return pnl / exit_price  # convert JPY PnL to USD
+        return pnl
+
     def _close_position(self, pos_id: str, reason: str):
         """Close a position and record the trade."""
         with self._lock:
@@ -1362,6 +1465,7 @@ class TradingEngine:
             pnl = (exit_price - pos.entry_price) * pos.quantity
         else:
             pnl = (pos.entry_price - exit_price) * pos.quantity
+        pnl = self._convert_pnl_to_usd(pos.symbol, pnl, exit_price)
 
         with self._lock:
             self.balance += pnl
@@ -1441,9 +1545,10 @@ class TradingEngine:
         for pos in self.positions.values():
             price = self.prices.get(pos.symbol, pos.entry_price)
             if pos.side == Side.BUY:
-                pos.unrealized_pnl = (price - pos.entry_price) * pos.quantity
+                raw_pnl = (price - pos.entry_price) * pos.quantity
             else:
-                pos.unrealized_pnl = (pos.entry_price - price) * pos.quantity
+                raw_pnl = (pos.entry_price - price) * pos.quantity
+            pos.unrealized_pnl = self._convert_pnl_to_usd(pos.symbol, raw_pnl, price)
             unrealized += pos.unrealized_pnl
 
         self.equity = self.balance + unrealized
