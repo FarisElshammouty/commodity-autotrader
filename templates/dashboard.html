@@ -177,6 +177,27 @@
   }
   .ai-on { background: rgba(139,92,246,0.2); color: #a78bfa; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
   .ai-off { background: rgba(100,116,139,0.15); color: var(--muted); padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  /* ── Analytics Tables ─────────────────────────────── */
+  .attr-table { width: 100%; font-size: 12px; border-collapse: collapse; }
+  .attr-table th { text-align: left; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  .attr-table td { padding: 6px 8px; border-bottom: 1px solid rgba(30,41,59,0.4); }
+  .attr-table tr:hover { background: rgba(59,130,246,0.05); }
+  .attr-tab { display: inline-block; padding: 4px 12px; font-size: 11px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
+  .attr-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Heatmap ──────────────────────────────────────── */
+  .heatmap-table { border-collapse: collapse; font-size: 10px; }
+  .heatmap-table th { padding: 4px 8px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
+  .heatmap-table td { padding: 6px 10px; text-align: center; font-weight: 600; border-radius: 3px; min-width: 40px; }
+
+  /* ── Drawdown Recovery ────────────────────────────── */
+  .dd-bar-bg { height: 28px; background: #1e293b; border-radius: 14px; overflow: hidden; position: relative; margin: 12px 0; }
+  .dd-bar-fill { height: 100%; border-radius: 14px; transition: width 0.5s; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; font-size: 12px; }
+  .dd-stat { text-align: center; }
+  .dd-stat .dd-val { font-size: 18px; font-weight: 700; }
+  .dd-stat .dd-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .session-badge {
     padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 6px;
   }
@@ -340,6 +361,43 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Analytics Section (Features 10, 11, 12) ── -->
+  <div class="grid" style="margin-bottom:20px">
+    <!-- Performance Attribution -->
+    <div class="card">
+      <h2>Performance Attribution <span id="attrInfo" style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px"></span></h2>
+      <div id="attributionArea" style="max-height:400px;overflow-y:auto">
+        <div class="empty">Waiting for closed trades...</div>
+      </div>
+    </div>
+    <!-- Drawdown Recovery Tracker -->
+    <div class="card">
+      <h2>Drawdown Recovery</h2>
+      <div id="drawdownArea">
+        <div class="empty">No drawdown data yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Win/Loss Heatmap -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>Win/Loss Heatmap <span style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px">(Day x Hour P&L)</span></h2>
+    <div id="heatmapArea" style="overflow-x:auto">
+      <div class="empty">Waiting for closed trades...</div>
+    </div>
+  </div>
+
+  <!-- Risk Monitor -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>Risk Monitor</h2>
+    <div id="riskMonitor" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      <div class="metric"><div class="label">Portfolio Heat</div><div class="value" id="rmHeat">$0</div><div class="sub">Max: 1% of equity</div></div>
+      <div class="metric"><div class="label">Consecutive Losses</div><div class="value" id="rmLosses">0</div><div class="sub" id="rmBreakerSub">Breaker: inactive</div></div>
+      <div class="metric"><div class="label">Vol-Norm Active</div><div class="value" id="rmVolNorm">--</div><div class="sub">ATR vs median check</div></div>
+      <div class="metric"><div class="label">Price Staleness</div><div class="value" id="rmStaleness">OK</div><div class="sub">Max 2min age</div></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -428,7 +486,10 @@ function updateDashboard(s) {
         <span>SMA20: ${ind.sma_20.toFixed(2)}</span><br>
         <span>MACD: ${ind.macd_histogram > 0 ? '+' : ''}${ind.macd_histogram.toFixed(3)}</span>
         <span>BB: ${(ind.bb_position * 100).toFixed(0)}%</span>
-        <span>ROC5: ${ind.roc_5 > 0 ? '+' : ''}${ind.roc_5.toFixed(2)}%</span>
+        <span>ROC5: ${ind.roc_5 > 0 ? '+' : ''}${ind.roc_5.toFixed(2)}%</span><br>
+        <span>ADX: ${ind.adx.toFixed(1)}${ind.adx_rising ? ' ↑' : ''}</span>
+        <span style="color:${ind.divergence === 'BULLISH' ? 'var(--green)' : ind.divergence === 'BEARISH' ? 'var(--red)' : 'var(--muted)'}">Div: ${ind.divergence || 'NONE'}</span>
+        <span>Vol: ${(ind.volume_ratio || 1).toFixed(1)}x</span>
         ${(()=>{ const sent = s.news_sentiment && s.news_sentiment[sym]; if (sent && sent.score !== undefined) { const sc = sent.score; const col = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; return `<br><span style="color:${col}">📰 Sentiment: ${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span>`; } return ''; })()}
         ${(()=>{ const h = s.htf_indicators && s.htf_indicators[sym]; if (!h) return ''; const t = h.trend || 'NEUTRAL'; const r = h.rsi || 50; const arrow = t.includes('BULLISH') ? '▲' : t.includes('BEARISH') ? '▼' : '—'; const cls = t.includes('BULLISH') ? 'htf-bullish' : t.includes('BEARISH') ? 'htf-bearish' : 'htf-neutral'; return `<br><span class="htf-badge ${cls}">1H: ${arrow} ${t} | RSI ${r.toFixed(1)}</span>`; })()}
       </div>` : ''}
@@ -515,7 +576,103 @@ function updateDashboard(s) {
     });
     sentRow.innerHTML = sentHtml;
   }
+
+  // ── Performance Attribution (Feature 10) ──
+  if (s.performance_attribution) {
+    const pa = s.performance_attribution;
+    const area = $('#attributionArea');
+    let tabView = area.dataset.tab || 'symbol';
+    const data = tabView === 'class' ? pa.by_class : tabView === 'day' ? pa.by_day : pa.by_symbol;
+    let html = `<div style="margin-bottom:8px">
+      <span class="attr-tab ${tabView==='symbol'?'active':''}" onclick="this.parentElement.parentElement.dataset.tab='symbol';refreshState()">By Symbol</span>
+      <span class="attr-tab ${tabView==='class'?'active':''}" onclick="this.parentElement.parentElement.dataset.tab='class';refreshState()">By Class</span>
+      <span class="attr-tab ${tabView==='day'?'active':''}" onclick="this.parentElement.parentElement.dataset.tab='day';refreshState()">By Day</span>
+    </div>`;
+    if (Object.keys(data).length === 0) {
+      html += '<div class="empty">No closed trades yet</div>';
+    } else {
+      html += `<table class="attr-table"><tr><th>Name</th><th>Trades</th><th>Win Rate</th><th>P&L</th></tr>`;
+      Object.entries(data).sort((a,b) => b[1].pnl - a[1].pnl).forEach(([k,v]) => {
+        const c = v.pnl >= 0 ? 'positive' : 'negative';
+        html += `<tr><td style="font-weight:600">${k}</td><td>${v.count}</td><td>${v.win_rate}%</td><td class="${c}" style="font-weight:700">${signUsd(v.pnl)}</td></tr>`;
+      });
+      html += '</table>';
+    }
+    area.innerHTML = html;
+    $('#attrInfo').textContent = `(${s.total_trades} total trades)`;
+  }
+
+  // ── Win/Loss Heatmap (Feature 11) ──
+  if (s.heatmap && s.heatmap.length > 0) {
+    const hm = s.heatmap;
+    const days = ['Mon','Tue','Wed','Thu','Fri'];
+    const hours = [...new Set(hm.map(h => h.hour))].sort((a,b) => a - b);
+    const lookup = {};
+    hm.forEach(h => { lookup[h.day + '_' + h.hour] = h; });
+    let html = '<table class="heatmap-table"><tr><th></th>';
+    hours.forEach(h => { html += `<th>${h}:00</th>`; });
+    html += '</tr>';
+    days.forEach(d => {
+      html += `<tr><th>${d}</th>`;
+      hours.forEach(h => {
+        const cell = lookup[d + '_' + h];
+        if (cell) {
+          const intensity = Math.min(Math.abs(cell.pnl) / 50, 1);
+          const bg = cell.pnl >= 0
+            ? `rgba(34,197,94,${0.1 + intensity * 0.6})`
+            : `rgba(239,68,68,${0.1 + intensity * 0.6})`;
+          html += `<td style="background:${bg}" title="${d} ${h}:00 — ${cell.count} trades, $${cell.pnl.toFixed(2)}">$${cell.pnl.toFixed(0)}</td>`;
+        } else {
+          html += '<td style="color:var(--muted)">-</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    html += '</table>';
+    $('#heatmapArea').innerHTML = html;
+  }
+
+  // ── Drawdown Recovery (Feature 12) ──
+  if (s.drawdown_recovery) {
+    const dd = s.drawdown_recovery;
+    let html = '';
+    if (dd.in_drawdown) {
+      const pct = Math.max(0, Math.min(100, dd.recovery_pct));
+      const barColor = pct > 75 ? 'var(--green)' : pct > 40 ? 'var(--yellow)' : 'var(--red)';
+      html += `<div style="font-size:13px;margin-bottom:8px;color:var(--yellow)">In Drawdown — recovering</div>`;
+      html += `<div class="dd-bar-bg"><div class="dd-bar-fill" style="width:${pct}%;background:${barColor}">${pct.toFixed(0)}%</div></div>`;
+    } else {
+      html += `<div style="font-size:13px;margin-bottom:12px;color:var(--green)">No active drawdown</div>`;
+    }
+    html += `<div class="dd-stats">
+      <div class="dd-stat"><div class="dd-val ${dd.current_dd > 10 ? 'negative' : ''}">${fmtUsd(dd.current_dd)}</div><div class="dd-lbl">Current DD</div></div>
+      <div class="dd-stat"><div class="dd-val">${dd.current_dd_pct.toFixed(1)}%</div><div class="dd-lbl">DD %</div></div>
+      <div class="dd-stat"><div class="dd-val">${fmtUsd(dd.peak)}</div><div class="dd-lbl">Peak</div></div>
+      <div class="dd-stat"><div class="dd-val">${fmtUsd(dd.recovery_needed)}</div><div class="dd-lbl">To Recover</div></div>
+      <div class="dd-stat"><div class="dd-val">${dd.drawdown_trades}</div><div class="dd-lbl">Trades in DD</div></div>
+    </div>`;
+    $('#drawdownArea').innerHTML = html;
+  }
+
+  // ── Risk Monitor ──
+  if (s.portfolio_heat !== undefined) {
+    const maxHeat = s.equity * 0.01;
+    const heatPct = maxHeat > 0 ? (s.portfolio_heat / maxHeat * 100).toFixed(0) : 0;
+    const heatEl = $('#rmHeat');
+    heatEl.textContent = `$${fmt(s.portfolio_heat)} (${heatPct}%)`;
+    heatEl.className = 'value ' + (s.portfolio_heat > maxHeat * 0.8 ? 'negative' : s.portfolio_heat > maxHeat * 0.5 ? 'warning' : 'positive');
+  }
+  if (s.consecutive_losses !== undefined) {
+    const lEl = $('#rmLosses');
+    lEl.textContent = s.consecutive_losses;
+    lEl.className = 'value ' + (s.consecutive_losses >= 3 ? 'negative' : s.consecutive_losses >= 2 ? 'warning' : '');
+    const breaker = s.loss_breaker_until > 0 ? new Date(s.loss_breaker_until * 1000) : null;
+    $('#rmBreakerSub').textContent = breaker && breaker > new Date() ? `Breaker until ${breaker.toLocaleTimeString()}` : 'Breaker: inactive';
+  }
 }
+
+let _lastState = null;
+function refreshState() { if (_lastState) updateDashboard(_lastState); }
 
 // ── Charts ──────────────────────────────────────────────────────────────
 const SYMS = Object.keys(SYMBOL_NAMES);
@@ -733,6 +890,7 @@ async function poll() {
   try {
     const res = await fetch('/api/state');
     const data = await res.json();
+    _lastState = data;
     updateDashboard(data);
     updateCharts(data);
     updateEquityChart(data);

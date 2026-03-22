@@ -211,6 +211,12 @@ class TradingEngine:
         self._save_counter = 0  # for periodic state saves
         self._loss_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after losses
         self._recent_trades_pnl: deque = deque(maxlen=20)  # rolling 20-trade P&L for equity curve trading
+        self._consecutive_losses: int = 0           # consecutive loss breaker
+        self._loss_breaker_until: float = 0         # timestamp when breaker expires
+        self._price_timestamps: dict[str, float] = {}  # {symbol: last_update_timestamp}
+        self._atr_history: dict[str, deque] = {     # rolling ATR values for vol-norm sizing
+            sym: deque(maxlen=50) for sym in SYMBOLS
+        }
 
         # Adaptive per-symbol parameters (populated by walk-forward optimization)
         self.symbol_params: dict[str, dict] = {}  # {symbol: {signal_threshold, atr_stop_mult, risk_reward, max_risk_pct}}
@@ -575,9 +581,13 @@ class TradingEngine:
         return float(price), None
 
     def fetch_prices(self):
-        """Fetch current prices using multiple sources with fallback chain."""
+        """Fetch current prices using multiple sources with fallback chain.
+        Staggers requests with small delays to avoid rate limiting (Feature 13)."""
         import pandas as pd
-        for sym, info in SYMBOLS.items():
+        for idx, (sym, info) in enumerate(SYMBOLS.items()):
+            # Rate limit protection: small delay between symbols to avoid Yahoo throttling
+            if idx > 0:
+                time.sleep(0.5)  # 500ms between symbols = ~7s total for 14 symbols
             price = None
             hist = None
 
@@ -611,6 +621,7 @@ class TradingEngine:
 
             if price and price > 0:
                 self.prices[sym] = price
+                self._price_timestamps[sym] = time.time()  # Feature 14: track freshness
                 last_high = price
                 last_low = price
                 if hist is not None and len(hist) > 0:
@@ -694,6 +705,36 @@ class TradingEngine:
 
         current_price = float(closes[-1])
 
+        # RSI/Price Divergence Detection (Feature 3)
+        divergence = "NONE"
+        if len(closes) >= 20:
+            # Compare last 10 bars: price direction vs RSI direction
+            price_recent = float(closes[-1])
+            price_prev = float(closes[-10])
+            rsi_recent = self._rsi(closes, 14)
+            rsi_prev = self._rsi(closes[:-5], 14) if len(closes) > 19 else rsi_recent
+            if price_recent > price_prev and rsi_recent < rsi_prev - 3:
+                divergence = "BEARISH"  # price up, RSI down = bearish divergence
+            elif price_recent < price_prev and rsi_recent > rsi_prev + 3:
+                divergence = "BULLISH"  # price down, RSI up = bullish divergence
+
+        # Volume analysis (Feature 4)
+        volume_ratio = 1.0
+        if "Volume" in hist.columns:
+            vols = hist["Volume"].values
+            valid_vols = [float(v) for v in vols[-20:] if v is not None and float(v) > 0]
+            if len(valid_vols) >= 5:
+                avg_vol = sum(valid_vols) / len(valid_vols)
+                current_vol = valid_vols[-1] if valid_vols else 0
+                volume_ratio = current_vol / avg_vol if avg_vol > 0 else 1.0
+
+        # ADX trend (for breakout detection — Feature 6)
+        prev_adx = self.indicators.get(symbol, {}).get("adx", adx)
+        adx_rising = adx > prev_adx + 2  # ADX increasing by 2+ points
+
+        # Track ATR history for volatility-normalized sizing
+        self._atr_history[symbol].append(atr)
+
         self.indicators[symbol] = {
             "sma_10": sma_10,
             "sma_20": sma_20,
@@ -708,7 +749,10 @@ class TradingEngine:
             "bb_lower": bb_lower,
             "atr": atr,
             "adx": adx,
+            "adx_rising": adx_rising,
             "roc_5": roc_5,
+            "divergence": divergence,
+            "volume_ratio": volume_ratio,
             "price": current_price,
             "trend": "BULLISH" if sma_10 > sma_20 else "BEARISH",
             "bb_position": (current_price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5,
@@ -870,6 +914,17 @@ class TradingEngine:
             if rolling_avg < 0:
                 risk_budget *= 0.5
 
+        # Volatility-Normalized Sizing (Feature 7): scale down when ATR is elevated
+        atr_hist = self._atr_history.get(symbol)
+        if atr_hist and len(atr_hist) >= 10:
+            median_atr = sorted(atr_hist)[len(atr_hist) // 2]
+            current_atr = atr_hist[-1]
+            if median_atr > 0 and current_atr > median_atr * 1.5:
+                # ATR is 50%+ above median — reduce size proportionally
+                vol_scale = median_atr / current_atr  # e.g. 0.67 if ATR is 1.5x median
+                vol_scale = max(vol_scale, 0.3)  # never less than 30%
+                risk_budget *= vol_scale
+
         if stop_distance <= 0:
             return 0
 
@@ -933,6 +988,29 @@ class TradingEngine:
         if time.time() < cooldown_until:
             remaining = int(cooldown_until - time.time())
             return False, f"Loss cooldown: {remaining}s remaining for {symbol}"
+
+        # Price Staleness Guard (Feature 14): reject if price data is too old
+        last_update = self._price_timestamps.get(symbol, 0)
+        if last_update > 0 and (time.time() - last_update) > 120:  # 2 minutes stale
+            return False, f"Stale price data for {symbol} ({int(time.time() - last_update)}s old)"
+
+        # Consecutive Loss Breaker (Feature 9): pause trading after 3+ consecutive losses
+        if time.time() < self._loss_breaker_until:
+            remaining = int(self._loss_breaker_until - time.time())
+            return False, f"Loss breaker active: {remaining}s remaining ({self._consecutive_losses} consecutive losses)"
+
+        # Max Portfolio Heat (Feature 8): total open risk capped at 1% of equity
+        total_risk = 0.0
+        for pos in self.positions.values():
+            if pos.side == Side.BUY:
+                risk = (pos.entry_price - pos.stop_loss) * pos.quantity
+            else:
+                risk = (pos.stop_loss - pos.entry_price) * pos.quantity
+            risk = self._convert_pnl_to_usd(pos.symbol, risk, self.prices.get(pos.symbol, pos.entry_price))
+            total_risk += max(0, risk)
+        max_heat = self.equity * 0.01  # 1% of equity
+        if total_risk >= max_heat:
+            return False, f"Portfolio heat limit: ${total_risk:.0f} risk >= 1% cap (${max_heat:.0f})"
 
         # Correlation guard: block same-direction trades on correlated pairs
         if side:
@@ -1161,7 +1239,39 @@ class TradingEngine:
             else:
                 session_boost = 0  # No boost if no directional bias
 
-        total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score + session_boost
+        # ─── Factor 8: RSI/Price Divergence (Feature 3) ──────────────
+        div_score = 0
+        divergence = ind.get("divergence", "NONE")
+        if divergence == "BULLISH":
+            div_score = 1.0
+            reasons.append(f"Bullish RSI divergence (price down, RSI up)")
+        elif divergence == "BEARISH":
+            div_score = -1.0
+            reasons.append(f"Bearish RSI divergence (price up, RSI down)")
+
+        # ─── Factor 9: Volume Confirmation (Feature 4) ───────────────
+        volume_ratio = ind.get("volume_ratio", 1.0)
+        volume_filter = 1.0
+        if volume_ratio > 1.5:
+            volume_filter = 1.2  # high volume confirms move
+            reasons.append(f"High volume confirmation ({volume_ratio:.1f}x avg)")
+        elif volume_ratio < 0.5:
+            volume_filter = 0.6  # low volume weakens signal
+            reasons.append(f"Low volume warning ({volume_ratio:.1f}x avg)")
+
+        # ─── Factor 10: Breakout Detection (Feature 6) ───────────────
+        breakout_score = 0
+        adx_rising = ind.get("adx_rising", False)
+        if adx_rising and ind.get("adx", 25) > 20:
+            if trend_score > 0:
+                breakout_score = 0.5
+                reasons.append(f"Bullish breakout (ADX rising + trend)")
+            elif trend_score < 0:
+                breakout_score = -0.5
+                reasons.append(f"Bearish breakout (ADX rising + trend)")
+
+        total = (trend_score + mr_score + mom_score + macd_score + sentiment_score
+                 + htf_score + session_boost + div_score + breakout_score) * volume_filter
 
         # Adaptive signal threshold per symbol
         threshold = self._get_symbol_param(symbol, "signal_threshold", SIGNAL_THRESHOLD)
@@ -1473,9 +1583,20 @@ class TradingEngine:
             self._recent_trades_pnl.append(pnl)  # equity curve tracking
             if pnl > 0:
                 self.winning_trades += 1
+                self._consecutive_losses = 0  # reset streak on win
             else:
                 # Loss cooldown: prevent re-entry on this symbol for a while
                 self._loss_cooldowns[pos.symbol] = time.time() + LOSS_COOLDOWN_SEC
+                # Consecutive Loss Breaker (Feature 9)
+                self._consecutive_losses += 1
+                if self._consecutive_losses >= 3:
+                    cooldown = 600 * (self._consecutive_losses - 2)  # 10min, 20min, 30min...
+                    cooldown = min(cooldown, 3600)  # cap at 1 hour
+                    self._loss_breaker_until = time.time() + cooldown
+                    self._log(
+                        f"LOSS BREAKER: {self._consecutive_losses} consecutive losses — pausing {cooldown // 60}min",
+                        level="WARN"
+                    )
 
         # Dynamic ratcheting floor: lock in gains as balance grows
         self._update_ratcheting_floor()
@@ -1579,6 +1700,114 @@ class TradingEngine:
             self.trade_log = self.trade_log[-300:]
         print(f"[{level}] {message}")
 
+    # ── Analytics (Features 10, 11, 12) ─────────────────────────────────────
+    def _get_performance_attribution(self) -> dict:
+        """Feature 10: P&L breakdown by symbol, asset class, session, and day of week."""
+        by_symbol = {}
+        by_class = {}
+        by_day = {}  # 0=Mon..6=Sun
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+        for t in self.closed_trades:
+            # By symbol
+            by_symbol.setdefault(t.symbol, {"pnl": 0, "count": 0, "wins": 0})
+            by_symbol[t.symbol]["pnl"] += t.pnl
+            by_symbol[t.symbol]["count"] += 1
+            if t.pnl > 0:
+                by_symbol[t.symbol]["wins"] += 1
+
+            # By asset class
+            ac = SYMBOLS.get(t.symbol, {}).get("asset_class", "unknown")
+            by_class.setdefault(ac, {"pnl": 0, "count": 0, "wins": 0})
+            by_class[ac]["pnl"] += t.pnl
+            by_class[ac]["count"] += 1
+            if t.pnl > 0:
+                by_class[ac]["wins"] += 1
+
+            # By day of week
+            try:
+                dt = datetime.fromisoformat(t.closed_at)
+                dow = dt.weekday()
+                key = day_names[dow]
+                by_day.setdefault(key, {"pnl": 0, "count": 0, "wins": 0})
+                by_day[key]["pnl"] += t.pnl
+                by_day[key]["count"] += 1
+                if t.pnl > 0:
+                    by_day[key]["wins"] += 1
+            except Exception:
+                pass
+
+        # Round and add win rates
+        for d in [by_symbol, by_class, by_day]:
+            for v in d.values():
+                v["pnl"] = round(v["pnl"], 2)
+                v["win_rate"] = round(v["wins"] / v["count"] * 100, 1) if v["count"] > 0 else 0
+
+        return {"by_symbol": by_symbol, "by_class": by_class, "by_day": by_day}
+
+    def _get_heatmap_data(self) -> list[dict]:
+        """Feature 11: Win/loss heatmap — day of week vs hour P&L."""
+        heatmap = {}  # (day, hour) -> {"pnl": 0, "count": 0}
+        for t in self.closed_trades:
+            try:
+                dt = datetime.fromisoformat(t.closed_at)
+                key = (dt.weekday(), dt.hour)
+                heatmap.setdefault(key, {"pnl": 0, "count": 0})
+                heatmap[key]["pnl"] += t.pnl
+                heatmap[key]["count"] += 1
+            except Exception:
+                pass
+        # Convert to flat list for frontend
+        day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        return [
+            {"day": day_names[d], "hour": h, "pnl": round(v["pnl"], 2), "count": v["count"]}
+            for (d, h), v in sorted(heatmap.items())
+        ]
+
+    def _get_drawdown_recovery(self) -> dict:
+        """Feature 12: Track current drawdown and recovery progress."""
+        if not self.closed_trades:
+            return {"in_drawdown": False, "current_dd": 0, "peak": self.peak_equity,
+                    "trough": self.equity, "recovery_pct": 100, "drawdown_trades": 0}
+        # Walk through equity curve to find current drawdown episode
+        running = self.starting_balance
+        peak = running
+        trough = running
+        dd_start_trade = 0
+        in_dd = False
+        for i, t in enumerate(self.closed_trades):
+            running += t.pnl
+            if running > peak:
+                peak = running
+                trough = running
+                in_dd = False
+                dd_start_trade = i + 1
+            elif running < trough:
+                trough = running
+                in_dd = True
+
+        current_dd = peak - self.equity
+        dd_pct = (current_dd / peak * 100) if peak > 0 else 0
+        recovery_needed = peak - self.equity
+        recovery_pct = 0
+        if in_dd and peak > trough:
+            recovered = self.equity - trough
+            total_dd = peak - trough
+            recovery_pct = round(recovered / total_dd * 100, 1) if total_dd > 0 else 0
+        else:
+            recovery_pct = 100
+
+        return {
+            "in_drawdown": current_dd > 10,  # >$10 is meaningful
+            "current_dd": round(current_dd, 2),
+            "current_dd_pct": round(dd_pct, 2),
+            "peak": round(peak, 2),
+            "trough": round(trough, 2),
+            "recovery_pct": recovery_pct,
+            "recovery_needed": round(recovery_needed, 2),
+            "drawdown_trades": len(self.closed_trades) - dd_start_trade,
+        }
+
     # ── State Snapshot (for API) ────────────────────────────────────────────
     def _build_equity_curve(self) -> list[dict]:
         """Build equity curve from closed trades for charting."""
@@ -1624,6 +1853,19 @@ class TradingEngine:
             "ai_enabled": self.ai_brain.enabled,
             "ai_explanations": self.ai_explanations,
             "ai_status": self.ai_brain.get_status() if self.ai_brain.enabled else None,
+            "performance_attribution": self._get_performance_attribution(),
+            "heatmap": self._get_heatmap_data(),
+            "drawdown_recovery": self._get_drawdown_recovery(),
+            "consecutive_losses": self._consecutive_losses,
+            "loss_breaker_until": self._loss_breaker_until,
+            "portfolio_heat": round(sum(
+                max(0, self._convert_pnl_to_usd(
+                    p.symbol,
+                    (p.entry_price - p.stop_loss) * p.quantity if p.side == Side.BUY
+                    else (p.stop_loss - p.entry_price) * p.quantity,
+                    self.prices.get(p.symbol, p.entry_price)
+                )) for p in self.positions.values()
+            ), 2),
             "log": self.trade_log[-100:],
             "status": self.status,
             "timestamp": datetime.now().isoformat(),

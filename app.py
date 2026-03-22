@@ -14,7 +14,7 @@ import backtest as bt
 
 app = Flask(__name__)
 
-VERSION = "v3.0"
+VERSION = "v3.2"
 engine = TradingEngine()
 _engine_started = False
 _start_lock = threading.Lock()
@@ -128,6 +128,9 @@ def api_reset():
     engine.max_drawdown = 0.0
     engine.closed_trades.clear()
     engine.trade_log.clear()
+    engine._consecutive_losses = 0
+    engine._loss_breaker_until = 0
+    engine._recent_trades_pnl.clear()
     # Wipe database
     db.reset_db()
     engine._log("Engine reset to fresh $25,000 start", level="INFO")
@@ -180,6 +183,16 @@ def api_journal():
     limit = min(max(limit, 10), 500)
     signals = db.load_signals(limit=limit)
     return jsonify({"signals": signals, "count": len(signals)})
+
+
+@app.route("/api/analytics")
+def api_analytics():
+    """Performance attribution, heatmap, and drawdown recovery data."""
+    return jsonify({
+        "attribution": engine._get_performance_attribution(),
+        "heatmap": engine._get_heatmap_data(),
+        "drawdown": engine._get_drawdown_recovery(),
+    })
 
 
 @app.route("/api/debug")
