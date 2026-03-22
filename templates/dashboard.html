@@ -256,6 +256,20 @@
     </div>
   </div>
 
+  <!-- Equity Curve Chart -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>Equity Curve <span id="ecInfo" style="color:var(--accent);font-size:11px;font-weight:400;margin-left:8px"></span></h2>
+    <div id="equityCurveContainer" style="width:100%;height:260px"></div>
+  </div>
+
+  <!-- Trade Journal (recent signals) -->
+  <div class="card" style="margin-bottom:20px">
+    <h2>Trade Journal <span style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px">(Last 50 signals)</span></h2>
+    <div id="journalArea" style="max-height:300px;overflow-y:auto;font-size:11px;font-family:'Cascadia Code','Fira Code',monospace;line-height:1.7">
+      <div class="empty">Loading signal journal...</div>
+    </div>
+  </div>
+
   <!-- Price Charts -->
   <div class="charts-row">
     <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
@@ -597,17 +611,103 @@ function updateCharts(s) {
 
 initCharts();
 
+// ── Equity Curve Chart ──────────────────────────────────────────────────
+let equityChart = null;
+let equitySeries = null;
+
+function initEquityChart() {
+  const container = document.getElementById('equityCurveContainer');
+  if (!container) return;
+  equityChart = LightweightCharts.createChart(container, {
+    autoSize: true,
+    layout: { background: { color: '#111827' }, textColor: '#64748b', fontFamily: 'Segoe UI, system-ui, sans-serif', fontSize: 10 },
+    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    timeScale: { timeVisible: true, borderColor: '#1e293b' },
+    rightPriceScale: { borderColor: '#1e293b' },
+  });
+  equitySeries = equityChart.addAreaSeries({
+    topColor: 'rgba(34, 197, 94, 0.3)',
+    bottomColor: 'rgba(34, 197, 94, 0.02)',
+    lineColor: '#22c55e',
+    lineWidth: 2,
+  });
+  // Add floor line
+  equitySeries.createPriceLine({ price: 24000, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Floor' });
+}
+
+function updateEquityChart(s) {
+  if (!equitySeries || !s.equity_curve || s.equity_curve.length < 2) return;
+  const seen = new Set();
+  const data = [];
+  s.equity_curve.forEach(p => {
+    const t = Math.floor(new Date(p.time).getTime() / 1000);
+    if (!seen.has(t) && t > 0) { seen.add(t); data.push({ time: t, value: p.balance }); }
+  });
+  data.sort((a, b) => a.time - b.time);
+  if (data.length > 1) {
+    equitySeries.setData(data);
+    equityChart.timeScale().fitContent();
+  }
+  const info = document.getElementById('ecInfo');
+  if (info) {
+    const curveTrading = s.equity_curve_active ? ' | ⚠ Equity Curve: SIZE HALVED' : '';
+    info.textContent = `${s.closed_trades.length} trades${curveTrading}`;
+    if (s.equity_curve_active) info.style.color = 'var(--yellow)';
+    else info.style.color = 'var(--accent)';
+  }
+}
+
+initEquityChart();
+
+// ── Trade Journal ───────────────────────────────────────────────────────
+let journalLoaded = false;
+async function loadJournal() {
+  try {
+    const res = await fetch('/api/journal?limit=50');
+    const data = await res.json();
+    const area = document.getElementById('journalArea');
+    if (!data.signals || data.signals.length === 0) {
+      area.innerHTML = '<div class="empty">No signals recorded yet</div>';
+      return;
+    }
+    let html = '';
+    data.signals.forEach(s => {
+      const time = s.timestamp ? s.timestamp.split('T')[1].split('.')[0] : '--';
+      const actionColor = s.action === 'EXECUTED' ? 'var(--green)' : s.action === 'NO_SIGNAL' ? 'var(--muted)' : 'var(--yellow)';
+      const sideStr = s.side ? `<span class="side side-${s.side}" style="font-size:9px;padding:1px 4px">${s.side}</span>` : '';
+      const strength = s.strength ? ` str=${s.strength.toFixed(1)}` : '';
+      html += `<div style="padding:3px 0;border-bottom:1px solid rgba(30,41,59,0.5)">
+        <span style="color:var(--muted)">${time}</span>
+        <span style="color:var(--accent)">${s.symbol}</span> ${sideStr}
+        <span style="color:${actionColor};font-weight:600">${s.action}</span>${strength}
+        ${s.adx ? ` <span style="color:var(--muted)">ADX=${s.adx.toFixed(1)}</span>` : ''}
+        ${s.rsi ? ` <span style="color:var(--muted)">RSI=${s.rsi.toFixed(1)}</span>` : ''}
+        <span style="color:var(--muted)">[${s.session_name || '?'}]</span>
+        ${s.reasons ? `<div style="color:var(--muted);font-size:10px;padding-left:16px">${s.reasons}</div>` : ''}
+      </div>`;
+    });
+    area.innerHTML = html;
+  } catch(e) {
+    console.error('Journal load error:', e);
+  }
+}
+
 // ── Polling ─────────────────────────────────────────────────────────────
 function tick() {
   $('#clock').textContent = new Date().toLocaleTimeString();
 }
 
+let pollCount = 0;
 async function poll() {
   try {
     const res = await fetch('/api/state');
     const data = await res.json();
     updateDashboard(data);
     updateCharts(data);
+    updateEquityChart(data);
+    // Refresh journal every 10th poll (~30s)
+    pollCount++;
+    if (pollCount % 10 === 1) loadJournal();
   } catch(e) {
     console.error('Poll error:', e);
   }
@@ -617,6 +717,7 @@ setInterval(tick, 1000);
 setInterval(poll, 3000);
 tick();
 poll();
+loadJournal();
 </script>
 
 <div style="text-align:center;padding:24px 0 16px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);margin-top:24px">

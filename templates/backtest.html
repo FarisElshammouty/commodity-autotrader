@@ -121,6 +121,7 @@
   <div class="tab-row">
     <button class="tab active" onclick="showTab('backtest')">Backtest</button>
     <button class="tab" onclick="showTab('optimize')">Walk-Forward Optimization</button>
+    <button class="tab" onclick="showTab('montecarlo')">Monte Carlo Analysis</button>
   </div>
 
   <!-- ── Backtest Panel ──────────────────────────────────────────────────── -->
@@ -206,6 +207,54 @@
     </div>
 
     <div id="optResults"></div>
+  </div>
+
+  <!-- ── Monte Carlo Panel ────────────────────────────────────────────────── -->
+  <div id="panel-montecarlo" class="panel">
+
+    <div class="info-box">
+      <strong>Monte Carlo Drawdown Analysis:</strong> Shuffles your trade P&L sequence 1,000 times to build
+      a statistical distribution of worst-case drawdowns. This shows the <strong>probability of ruin</strong>
+      (hitting the $24,000 floor) and the expected drawdown at various confidence levels (90th, 95th, 99th percentile).
+      Use this to understand tail risk — not just what happened, but what <em>could</em> happen with the same trades in a different order.
+    </div>
+
+    <div class="card">
+      <div class="card-title">Run Monte Carlo Simulation</div>
+      <div class="controls">
+        <div class="control-group">
+          <label>Data Source</label>
+          <select id="mcSource">
+            <option value="live">Live Trades</option>
+            <option value="backtest">Backtest Results</option>
+          </select>
+        </div>
+        <div class="control-group" id="mcSymbolGroup" style="display:none">
+          <label>Symbol</label>
+          <select id="mcSymbol">
+            <option value="XAUUSD">Gold (XAUUSD)</option>
+            <option value="XAGUSD">Silver (XAGUSD)</option>
+            <option value="BRENT">Brent Crude</option>
+            <option value="WTI">WTI Crude</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Simulations</label>
+          <select id="mcSims">
+            <option value="500">500</option>
+            <option value="1000" selected>1,000</option>
+            <option value="3000">3,000</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="mcRunBtn" onclick="runMonteCarlo()">
+          <span class="spinner" id="mcSpinner"></span>
+          Run Simulation
+        </button>
+        <span class="status-msg" id="mcStatus"></span>
+      </div>
+    </div>
+
+    <div id="mcResults"></div>
   </div>
 
 </div>
@@ -398,6 +447,93 @@ function renderOptResults(data, symbol) {
             <span>${r.profit_factor === Infinity ? '∞' : r.profit_factor.toFixed(2)}</span>
           </div>
         `).join('')}
+      </div>
+    </div>
+  `;
+  el.innerHTML = html;
+}
+
+// ── Monte Carlo ──────────────────────────────────────────────────────────────
+
+document.getElementById('mcSource').addEventListener('change', function() {
+  document.getElementById('mcSymbolGroup').style.display = this.value === 'backtest' ? 'flex' : 'none';
+});
+
+async function runMonteCarlo() {
+  const btn = document.getElementById('mcRunBtn');
+  const spinner = document.getElementById('mcSpinner');
+  const status = document.getElementById('mcStatus');
+  const source = document.getElementById('mcSource').value;
+  const sims = document.getElementById('mcSims').value;
+
+  btn.disabled = true;
+  spinner.style.display = 'inline-block';
+  status.textContent = `Running ${sims} simulations...`;
+  document.getElementById('mcResults').innerHTML = '';
+
+  try {
+    let url = `/api/monte-carlo?source=${source}&simulations=${sims}`;
+    if (source === 'backtest') {
+      url += `&symbol=${document.getElementById('mcSymbol').value}`;
+    }
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.error) {
+      status.textContent = data.error;
+      return;
+    }
+    renderMonteCarloResults(data);
+    status.textContent = `Done — ${data.n_simulations} simulations with ${data.n_trades} trades.`;
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    spinner.style.display = 'none';
+  }
+}
+
+function renderMonteCarloResults(data) {
+  const el = document.getElementById('mcResults');
+  const dd = data.drawdown_percentiles || {};
+  const bal = data.final_balance_percentiles || {};
+  const ruinColor = data.ruin_probability > 5 ? 'neg' : data.ruin_probability > 1 ? 'neu' : 'pos';
+  const ruinLabel = data.ruin_probability > 5 ? 'HIGH RISK' : data.ruin_probability > 1 ? 'MODERATE' : 'LOW RISK';
+
+  let html = `
+    <div class="card">
+      <div class="card-title">Monte Carlo Results — ${data.n_simulations} Simulations</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px">
+        <div class="param-item"><div class="param-key">Trades Analyzed</div><div class="param-val">${data.n_trades}</div></div>
+        <div class="param-item"><div class="param-key">Total P&L</div><div class="param-val" style="color:${data.total_pnl >= 0 ? 'var(--green)' : 'var(--red)'}">${data.total_pnl >= 0 ? '+' : ''}$${data.total_pnl.toFixed(0)}</div></div>
+        <div class="param-item"><div class="param-key">Avg Trade</div><div class="param-val" style="color:${data.avg_trade >= 0 ? 'var(--green)' : 'var(--red)'}">${data.avg_trade >= 0 ? '+' : ''}$${data.avg_trade.toFixed(2)}</div></div>
+        <div class="param-item"><div class="param-key">Ruin Probability</div><div class="param-val"><span class="${ruinColor}">${data.ruin_probability.toFixed(1)}%</span> <span style="font-size:10px;color:var(--muted)">${ruinLabel}</span></div></div>
+      </div>
+
+      <div class="compare-row">
+        <div class="compare-box">
+          <div class="label">Max Drawdown Distribution</div>
+          <div class="metric-row"><span class="metric-label">50th percentile (median)</span><span class="metric-value neg">-$${dd.p50.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">75th percentile</span><span class="metric-value neg">-$${dd.p75.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">90th percentile</span><span class="metric-value neg">-$${dd.p90.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">95th percentile</span><span class="metric-value neg" style="font-weight:700">-$${dd.p95.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">99th percentile</span><span class="metric-value neg" style="font-weight:700">-$${dd.p99.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">Worst case</span><span class="metric-value neg">-$${dd.max.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">Average max DD</span><span class="metric-value neg">-$${data.avg_max_drawdown.toFixed(0)}</span></div>
+        </div>
+        <div class="compare-box">
+          <div class="label">Final Balance Distribution</div>
+          <div class="metric-row"><span class="metric-label">5th percentile (worst)</span><span class="metric-value ${bal.p5 >= 25000 ? 'pos' : 'neg'}">$${bal.p5.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">25th percentile</span><span class="metric-value ${bal.p25 >= 25000 ? 'pos' : 'neg'}">$${bal.p25.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">50th percentile (median)</span><span class="metric-value ${bal.p50 >= 25000 ? 'pos' : 'neg'}">$${bal.p50.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">75th percentile</span><span class="metric-value pos">$${bal.p75.toFixed(0)}</span></div>
+          <div class="metric-row"><span class="metric-label">95th percentile (best)</span><span class="metric-value pos">$${bal.p95.toFixed(0)}</span></div>
+        </div>
+      </div>
+
+      <div style="margin-top:16px;padding:12px;background:rgba(59,130,246,0.08);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.6">
+        <strong style="color:var(--text)">How to read this:</strong>
+        The 95th percentile drawdown means that in 95% of random trade orderings, the max drawdown stayed below <strong>$${dd.p95.toFixed(0)}</strong>.
+        ${data.ruin_probability > 0 ? `<span style="color:var(--red)">In ${data.ruin_probability.toFixed(1)}% of simulations, the account hit the $24,000 hard floor.</span>` : '<span style="color:var(--green)">No simulations hit the $24,000 hard floor — the strategy has a strong safety margin.</span>'}
       </div>
     </div>
   `;

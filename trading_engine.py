@@ -83,6 +83,8 @@ class Position:
     reason: str
     opened_at: str
     unrealized_pnl: float = 0.0
+    original_quantity: float = 0.0   # set on open, tracks initial size
+    partial_closed: bool = False     # True after 50% taken at 1.5x ATR
 
     def to_dict(self):
         d = asdict(self)
@@ -136,6 +138,11 @@ class TradingEngine:
 
         self._save_counter = 0  # for periodic state saves
         self._loss_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after losses
+        self._recent_trades_pnl: deque = deque(maxlen=20)  # rolling 20-trade P&L for equity curve trading
+
+        # Adaptive per-symbol parameters (populated by walk-forward optimization)
+        self.symbol_params: dict[str, dict] = {}  # {symbol: {signal_threshold, atr_stop_mult, risk_reward, max_risk_pct}}
+        self._last_optimization_run: float = 0
 
         # AI Brain
         self.ai_brain = AIBrain(log_callback=lambda msg, level="INFO": self._log(msg, level=level))
@@ -603,6 +610,9 @@ class TradingEngine:
         lows = hist["Low"].values
         atr = self._atr(highs, lows, closes, 14)
 
+        # ADX (14-period) for regime detection
+        adx = self._adx(highs, lows, closes, 14)
+
         # Price momentum (rate of change over 5 periods)
         roc_5 = ((closes[-1] - closes[-6]) / closes[-6] * 100) if len(closes) >= 6 else 0
 
@@ -621,6 +631,7 @@ class TradingEngine:
             "bb_mid": bb_mid,
             "bb_lower": bb_lower,
             "atr": atr,
+            "adx": adx,
             "roc_5": roc_5,
             "price": current_price,
             "trend": "BULLISH" if sma_10 > sma_20 else "BEARISH",
@@ -669,6 +680,74 @@ class TradingEngine:
             trs.append(tr)
         return sum(trs) / len(trs)
 
+    @staticmethod
+    def _adx(highs, lows, closes, period=14):
+        """Average Directional Index — measures trend strength (0-100).
+        ADX > 25 = trending, ADX < 20 = ranging/choppy."""
+        if len(highs) < period + 2:
+            return 25.0  # neutral default
+        n = len(highs)
+        plus_dm = []
+        minus_dm = []
+        tr_list = []
+        for i in range(1, n):
+            up_move = float(highs[i] - highs[i - 1])
+            down_move = float(lows[i - 1] - lows[i])
+            plus_dm.append(up_move if up_move > down_move and up_move > 0 else 0.0)
+            minus_dm.append(down_move if down_move > up_move and down_move > 0 else 0.0)
+            tr_list.append(max(
+                float(highs[i] - lows[i]),
+                abs(float(highs[i] - closes[i - 1])),
+                abs(float(lows[i] - closes[i - 1])),
+            ))
+        if len(tr_list) < period:
+            return 25.0
+        # Wilder smoothing
+        atr_s = sum(tr_list[:period])
+        plus_s = sum(plus_dm[:period])
+        minus_s = sum(minus_dm[:period])
+        dx_vals = []
+        for i in range(period, len(tr_list)):
+            atr_s = atr_s - atr_s / period + tr_list[i]
+            plus_s = plus_s - plus_s / period + plus_dm[i]
+            minus_s = minus_s - minus_s / period + minus_dm[i]
+            plus_di = 100 * plus_s / atr_s if atr_s > 0 else 0
+            minus_di = 100 * minus_s / atr_s if atr_s > 0 else 0
+            di_sum = plus_di + minus_di
+            dx = 100 * abs(plus_di - minus_di) / di_sum if di_sum > 0 else 0
+            dx_vals.append(dx)
+        if not dx_vals:
+            return 25.0
+        if len(dx_vals) < period:
+            return float(sum(dx_vals) / len(dx_vals))
+        adx = sum(dx_vals[:period]) / period
+        for i in range(period, len(dx_vals)):
+            adx = (adx * (period - 1) + dx_vals[i]) / period
+        return float(adx)
+
+    # ── Adaptive Parameters ────────────────────────────────────────────────
+    def _get_symbol_param(self, symbol: str, param: str, default: float) -> float:
+        """Get an adaptive parameter for a symbol, falling back to global default."""
+        sp = self.symbol_params.get(symbol)
+        if sp:
+            return sp.get(param, default)
+        return default
+
+    def _run_background_optimization(self):
+        """Run walk-forward optimization for all symbols and update adaptive params."""
+        import backtest as bt
+        self._log("Starting background walk-forward optimization for adaptive params...", level="INFO")
+        for sym in SYMBOLS:
+            try:
+                result = bt.run_optimization(sym, period_days=180)
+                if "best_params" in result and result["best_params"]:
+                    self.symbol_params[sym] = result["best_params"]
+                    self._log(f"[ADAPTIVE] {sym} optimized: {result['best_params']}", level="INFO")
+            except Exception as e:
+                self._log(f"[ADAPTIVE] Optimization failed for {sym}: {e}", level="WARN")
+        self._last_optimization_run = time.time()
+        self._log("Background optimization complete.", level="INFO")
+
     # ── Session Detection ──────────────────────────────────────────────────
     @staticmethod
     def _get_current_session() -> dict:
@@ -710,6 +789,12 @@ class TradingEngine:
             risk_budget *= 0.5
         elif buffer < 1000:
             risk_budget *= 0.7
+
+        # Equity curve trading: cut size by 50% when recent trades are net negative
+        if len(self._recent_trades_pnl) >= 5:
+            rolling_avg = sum(self._recent_trades_pnl) / len(self._recent_trades_pnl)
+            if rolling_avg < 0:
+                risk_budget *= 0.5
 
         if stop_distance <= 0:
             return 0
@@ -796,9 +881,11 @@ class TradingEngine:
         self._update_equity()
         self._check_floor_emergency()
         self._check_stops_and_targets()
+        self._check_time_exits()
         self._trail_stops()
 
         summaries = []
+        session = self._get_current_session()
         for symbol in SYMBOLS:
             if symbol not in self.indicators or symbol not in self.prices:
                 continue
@@ -810,13 +897,42 @@ class TradingEngine:
             sig_str = f"{signal['side'].value}(str={signal['strength']:.1f})" if signal else "NONE"
             summaries.append(f"{symbol}={sig_str}")
 
+            # Trade Journal: log every signal evaluation
+            journal_entry = {
+                "timestamp": datetime.now().isoformat(),
+                "symbol": symbol,
+                "price": price,
+                "adx": ind.get("adx", 0),
+                "rsi": ind.get("rsi", 50),
+                "session_name": session["name"],
+            }
             if not signal:
+                journal_entry["action"] = "NO_SIGNAL"
+                try:
+                    db.save_signal(journal_entry)
+                except Exception:
+                    pass
                 continue
+
+            journal_entry["side"] = signal["side"].value
+            journal_entry["strength"] = signal["strength"]
+            journal_entry["reasons"] = "; ".join(signal["reasons"])
 
             can_open, reason = self._can_open_position(symbol, side=signal["side"].value)
             if not can_open:
                 summaries[-1] += f"[blocked:{reason}]"
+                journal_entry["action"] = f"BLOCKED:{reason}"
+                try:
+                    db.save_signal(journal_entry)
+                except Exception:
+                    pass
                 continue
+
+            journal_entry["action"] = "EXECUTED"
+            try:
+                db.save_signal(journal_entry)
+            except Exception:
+                pass
 
             # AI Signal Enhancement
             ai_result = None
@@ -847,7 +963,6 @@ class TradingEngine:
             if signal:
                 self._execute_signal(symbol, signal, ind, price, ai_result=ai_result)
 
-        session = self._get_current_session()
         self._log(f"Strategy scan [{session['name']}]: {' | '.join(summaries)} | Equity=${self.equity:.2f} | Buffer=${self.equity - self.hard_floor:.2f}")
 
     def _generate_signal(self, symbol: str, ind: dict, price: float) -> dict | None:
@@ -953,10 +1068,13 @@ class TradingEngine:
 
         total = trend_score + mr_score + mom_score + macd_score + sentiment_score + htf_score + session_boost
 
+        # Adaptive signal threshold per symbol
+        threshold = self._get_symbol_param(symbol, "signal_threshold", SIGNAL_THRESHOLD)
+
         # Standard composite: need strong agreement from multiple factors
-        if total >= SIGNAL_THRESHOLD:
+        if total >= threshold:
             signal = {"side": Side.BUY, "strength": total, "reasons": reasons}
-        elif total <= -SIGNAL_THRESHOLD:
+        elif total <= -threshold:
             signal = {"side": Side.SELL, "strength": abs(total), "reasons": reasons}
         # Strong mean-reversion alone (extreme conditions only)
         elif abs(mr_score) >= 1.5 and abs(total) >= 1.0:
@@ -969,6 +1087,23 @@ class TradingEngine:
             signal = {"side": side, "strength": abs(trend_score + macd_score), "reasons": reasons}
         else:
             return None
+
+        # ─── ADX Regime Filter ─────────────────────────────────────
+        adx = ind.get("adx", 25)
+        if adx < 20:
+            # Choppy/ranging market — only allow mean-reversion signals
+            if abs(mr_score) < 1.0:
+                reasons.append(f"BLOCKED by ADX regime: ADX={adx:.1f} (ranging), no strong MR signal")
+                return None
+            reasons.append(f"ADX={adx:.1f} (ranging) — mean-reversion mode")
+        elif adx > 25:
+            # Trending market — only allow trend-following signals
+            if abs(trend_score) < 0.5:
+                reasons.append(f"BLOCKED by ADX regime: ADX={adx:.1f} (trending), no trend signal")
+                return None
+            reasons.append(f"ADX={adx:.1f} (trending) — trend-following mode")
+        else:
+            reasons.append(f"ADX={adx:.1f} (transitional)")
 
         # ─── HTF Hard Filter: block trades against strong HTF trend ──
         if htf:
@@ -988,9 +1123,13 @@ class TradingEngine:
         atr = ind["atr"]
         side = signal["side"]
 
+        # Adaptive per-symbol parameters (from walk-forward optimization)
+        atr_stop = self._get_symbol_param(symbol, "atr_stop_mult", ATR_STOP_MULT)
+        rr_ratio = self._get_symbol_param(symbol, "risk_reward", RISK_REWARD_RATIO)
+
         # ATR-based stop loss and take profit
-        stop_distance = atr * ATR_STOP_MULT
-        tp_distance = stop_distance * RISK_REWARD_RATIO
+        stop_distance = atr * atr_stop
+        tp_distance = stop_distance * rr_ratio
 
         if side == Side.BUY:
             stop_loss = price - stop_distance
@@ -1031,6 +1170,7 @@ class TradingEngine:
             take_profit=round(take_profit, 4),
             reason=reason,
             opened_at=datetime.now().isoformat(),
+            original_quantity=quantity,
         )
 
         with self._lock:
@@ -1075,7 +1215,7 @@ class TradingEngine:
             threading.Thread(target=_ai_explain, daemon=True).start()
 
     def _check_stops_and_targets(self):
-        """Check all open positions for SL/TP hits."""
+        """Check all open positions for SL/TP hits and partial profit taking."""
         for pid in list(self.positions.keys()):
             pos = self.positions.get(pid)
             if not pos:
@@ -1084,6 +1224,16 @@ class TradingEngine:
             price = self.prices.get(pos.symbol)
             if not price:
                 continue
+
+            # Partial profit taking: close 50% at 1.5x ATR profit
+            if not pos.partial_closed:
+                atr = self.indicators.get(pos.symbol, {}).get("atr", 0)
+                if atr > 0:
+                    partial_target = atr * 1.5
+                    if pos.side == Side.BUY and price - pos.entry_price >= partial_target:
+                        self._take_partial_profit(pos, price, partial_target)
+                    elif pos.side == Side.SELL and pos.entry_price - price >= partial_target:
+                        self._take_partial_profit(pos, price, partial_target)
 
             if pos.side == Side.BUY:
                 if price <= pos.stop_loss:
@@ -1095,6 +1245,48 @@ class TradingEngine:
                     self._close_position(pid, f"Stop Loss hit @ {price:.4f} (SL was {pos.stop_loss})")
                 elif price <= pos.take_profit:
                     self._close_position(pid, f"Take Profit hit @ {price:.4f} (TP was {pos.take_profit})")
+
+    def _take_partial_profit(self, pos: Position, price: float, partial_target: float):
+        """Close 50% of a position at 1.5x ATR profit and move SL to break-even."""
+        lot_size = SYMBOLS[pos.symbol]["lot_size"]
+        close_qty = max(lot_size, round((pos.quantity * 0.5) / lot_size) * lot_size)
+        if close_qty >= pos.quantity:
+            return  # can't close more than we have
+
+        if pos.side == Side.BUY:
+            pnl = (price - pos.entry_price) * close_qty
+        else:
+            pnl = (pos.entry_price - price) * close_qty
+
+        with self._lock:
+            pos.quantity -= close_qty
+            pos.partial_closed = True
+            pos.stop_loss = pos.entry_price  # move SL to break-even
+            self.balance += pnl
+            self.daily_pnl += pnl
+            if pnl > 0:
+                self.winning_trades += 1
+            self.total_trades += 1
+
+        self._update_ratcheting_floor()
+
+        self._log(
+            f"PARTIAL CLOSE {pos.side.value} {pos.symbol} @ {price:.4f} | "
+            f"Closed {close_qty} of {pos.original_quantity} | PnL: ${pnl:+.2f} | "
+            f"SL moved to break-even ({pos.entry_price:.4f})",
+            level="TRADE",
+            trade_data={
+                "action": "PARTIAL_CLOSE",
+                "id": pos.id,
+                "symbol": pos.symbol,
+                "side": pos.side.value,
+                "price": price,
+                "quantity_closed": close_qty,
+                "quantity_remaining": pos.quantity,
+                "pnl": round(pnl, 2),
+            }
+        )
+        self._save_state_to_db()
 
     def _trail_stops(self):
         """Trail stop losses — only activates after price moves ATR_TRAIL_TRIGGER in our favour.
@@ -1129,6 +1321,34 @@ class TradingEngine:
                     pos.stop_loss = round(new_sl, 4)
                     self._log(f"Trailing SL {pos.symbol} SELL: {old_sl:.4f} -> {pos.stop_loss} (profit locked: +{profit_dist:.4f})")
 
+    def _check_time_exits(self):
+        """Close trades that haven't moved 1x ATR in our favor within 7 hours."""
+        now = datetime.now()
+        for pid in list(self.positions.keys()):
+            pos = self.positions.get(pid)
+            if not pos:
+                continue
+            try:
+                opened = datetime.fromisoformat(pos.opened_at)
+                elapsed = (now - opened).total_seconds()
+            except Exception:
+                continue
+            if elapsed < 7 * 3600:  # less than 7 hours
+                continue
+            atr = self.indicators.get(pos.symbol, {}).get("atr", 0)
+            if atr <= 0:
+                continue
+            price = self.prices.get(pos.symbol)
+            if not price:
+                continue
+            if pos.side == Side.BUY:
+                move = price - pos.entry_price
+            else:
+                move = pos.entry_price - price
+            if move < atr:  # hasn't moved 1x ATR in our favor
+                hours = elapsed / 3600
+                self._close_position(pid, f"Time exit: {hours:.1f}h elapsed, only {move:.4f} move vs {atr:.4f} ATR target")
+
     def _close_position(self, pos_id: str, reason: str):
         """Close a position and record the trade."""
         with self._lock:
@@ -1146,6 +1366,7 @@ class TradingEngine:
         with self._lock:
             self.balance += pnl
             self.daily_pnl += pnl
+            self._recent_trades_pnl.append(pnl)  # equity curve tracking
             if pnl > 0:
                 self.winning_trades += 1
             else:
@@ -1254,6 +1475,15 @@ class TradingEngine:
         print(f"[{level}] {message}")
 
     # ── State Snapshot (for API) ────────────────────────────────────────────
+    def _build_equity_curve(self) -> list[dict]:
+        """Build equity curve from closed trades for charting."""
+        curve = [{"time": datetime.now().isoformat(), "balance": self.starting_balance}]
+        running = self.starting_balance
+        for t in self.closed_trades:
+            running += t.pnl
+            curve.append({"time": t.closed_at, "balance": round(running, 2)})
+        return curve
+
     def get_state(self) -> dict:
         self._update_equity()
         win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
@@ -1282,6 +1512,9 @@ class TradingEngine:
                 for k, v in self.htf_indicators.items()
             },
             "session": self._get_current_session(),
+            "equity_curve": self._build_equity_curve(),
+            "symbol_params": self.symbol_params,
+            "equity_curve_active": len(self._recent_trades_pnl) >= 5 and sum(self._recent_trades_pnl) / len(self._recent_trades_pnl) < 0,
             "news_sentiment": self.news_sentiment,
             "ai_enabled": self.ai_brain.enabled,
             "ai_explanations": self.ai_explanations,
@@ -1341,14 +1574,26 @@ class TradingEngine:
                     self._log(f"HTF loop error: {e}", level="WARN")
                 time.sleep(300)  # 5 minutes
 
+        def optimization_loop():
+            """Run walk-forward optimization daily to update adaptive parameters."""
+            time.sleep(120)  # wait 2 min for startup
+            while self.running:
+                try:
+                    self._run_background_optimization()
+                except Exception as e:
+                    self._log(f"Optimization loop error: {e}", level="WARN")
+                time.sleep(86400)  # run once per day
+
         threading.Thread(target=price_loop, daemon=True).start()
         threading.Thread(target=strategy_loop, daemon=True).start()
         threading.Thread(target=sentiment_loop, daemon=True).start()
         threading.Thread(target=htf_loop, daemon=True).start()
+        threading.Thread(target=optimization_loop, daemon=True).start()
 
         ai_status = "AI ENABLED (Groq)" if self.ai_brain.enabled else "AI disabled (no GROQ_API_KEY)"
         self._log(ai_status)
         self._log("Multi-timeframe: 1H trend filter active (updates every 5min)")
+        self._log("Adaptive parameters: walk-forward optimization runs daily")
 
     def stop(self):
         self.running = False

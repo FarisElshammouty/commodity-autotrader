@@ -143,6 +143,46 @@ def _atr(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 
     return sum(trs) / len(trs)
 
 
+def _adx(highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> float:
+    if len(highs) < period + 2:
+        return 25.0
+    n = len(highs)
+    plus_dm, minus_dm, tr_list = [], [], []
+    for i in range(1, n):
+        up_move = float(highs[i] - highs[i - 1])
+        down_move = float(lows[i - 1] - lows[i])
+        plus_dm.append(up_move if up_move > down_move and up_move > 0 else 0.0)
+        minus_dm.append(down_move if down_move > up_move and down_move > 0 else 0.0)
+        tr_list.append(max(
+            float(highs[i] - lows[i]),
+            abs(float(highs[i] - closes[i - 1])),
+            abs(float(lows[i] - closes[i - 1])),
+        ))
+    if len(tr_list) < period:
+        return 25.0
+    atr_s = sum(tr_list[:period])
+    plus_s = sum(plus_dm[:period])
+    minus_s = sum(minus_dm[:period])
+    dx_vals = []
+    for i in range(period, len(tr_list)):
+        atr_s = atr_s - atr_s / period + tr_list[i]
+        plus_s = plus_s - plus_s / period + plus_dm[i]
+        minus_s = minus_s - minus_s / period + minus_dm[i]
+        plus_di = 100 * plus_s / atr_s if atr_s > 0 else 0
+        minus_di = 100 * minus_s / atr_s if atr_s > 0 else 0
+        di_sum = plus_di + minus_di
+        dx = 100 * abs(plus_di - minus_di) / di_sum if di_sum > 0 else 0
+        dx_vals.append(dx)
+    if not dx_vals:
+        return 25.0
+    if len(dx_vals) < period:
+        return float(sum(dx_vals) / len(dx_vals))
+    adx = sum(dx_vals[:period]) / period
+    for i in range(period, len(dx_vals)):
+        adx = (adx * (period - 1) + dx_vals[i]) / period
+    return float(adx)
+
+
 def _compute_indicators(closes: np.ndarray, highs: np.ndarray, lows: np.ndarray) -> Optional[dict]:
     if len(closes) < 26:
         return None
@@ -174,13 +214,15 @@ def _compute_indicators(closes: np.ndarray, highs: np.ndarray, lows: np.ndarray)
     price = float(closes[-1])
     bb_pos = (price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5
 
+    adx = _adx(highs, lows, closes, 14)
+
     return {
         "sma_10": sma_10, "sma_20": sma_20,
         "ema_12": ema_12, "ema_26": ema_26,
         "macd_line": macd_line, "macd_signal": macd_signal, "macd_histogram": macd_histogram,
         "rsi": rsi,
         "bb_upper": bb_upper, "bb_mid": bb_mid, "bb_lower": bb_lower, "bb_position": bb_pos,
-        "atr": atr, "roc_5": roc_5, "price": price,
+        "atr": atr, "adx": adx, "roc_5": roc_5, "price": price,
         "trend": "BULLISH" if sma_10 > sma_20 else "BEARISH",
     }
 
@@ -230,14 +272,25 @@ def _generate_signal(ind: dict, params: dict) -> Optional[dict]:
     total = trend_score + mr_score + mom_score + macd_score
 
     if total >= threshold:
-        return {"side": "BUY", "strength": total, "reasons": reasons}
+        signal = {"side": "BUY", "strength": total, "reasons": reasons}
     elif total <= -threshold:
-        return {"side": "SELL", "strength": abs(total), "reasons": reasons}
-    if abs(mr_score) >= 1.5 and abs(total) >= 1.0:
-        return {"side": "BUY" if mr_score > 0 else "SELL", "strength": abs(mr_score), "reasons": reasons}
-    if abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0) and abs(total) >= 1.5:
-        return {"side": "BUY" if trend_score > 0 else "SELL", "strength": abs(trend_score + macd_score), "reasons": reasons}
-    return None
+        signal = {"side": "SELL", "strength": abs(total), "reasons": reasons}
+    elif abs(mr_score) >= 1.5 and abs(total) >= 1.0:
+        signal = {"side": "BUY" if mr_score > 0 else "SELL", "strength": abs(mr_score), "reasons": reasons}
+    elif abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0) and abs(total) >= 1.5:
+        signal = {"side": "BUY" if trend_score > 0 else "SELL", "strength": abs(trend_score + macd_score), "reasons": reasons}
+    else:
+        return None
+
+    # ADX Regime Filter
+    adx = ind.get("adx", 25)
+    if adx < 20:
+        if abs(mr_score) < 1.0:
+            return None  # ranging market, no strong MR signal
+    elif adx > 25:
+        if abs(trend_score) < 0.5:
+            return None  # trending market, no trend signal
+    return signal
 
 
 # ── Core Backtest Runner ─────────────────────────────────────────────────────
@@ -644,3 +697,67 @@ def run_optimization(symbol: str, period_days: int = 180) -> dict:
     if hist is None or len(hist) < 80:
         return {"error": f"Not enough historical data for {symbol} ({len(hist) if hist is not None else 0} bars)"}
     return walk_forward_optimize(symbol, hist)
+
+
+# ── Monte Carlo Drawdown Analysis ──────────────────────────────────────────
+
+def monte_carlo_drawdown(trade_pnls: list[float], n_simulations: int = 1000,
+                         starting_balance: float = 25000.0) -> dict:
+    """
+    Shuffle trade PnL sequences and compute worst-case drawdown distribution.
+    Returns percentile stats for risk assessment.
+    """
+    if not trade_pnls or len(trade_pnls) < 5:
+        return {"error": "Need at least 5 trades for Monte Carlo analysis"}
+
+    pnls = np.array(trade_pnls, dtype=float)
+    max_drawdowns = []
+    final_balances = []
+    ruin_count = 0  # how many sims hit the hard floor
+
+    for _ in range(n_simulations):
+        shuffled = np.random.permutation(pnls)
+        equity = starting_balance
+        peak = starting_balance
+        max_dd = 0.0
+
+        for pnl in shuffled:
+            equity += pnl
+            if equity > peak:
+                peak = equity
+            dd = peak - equity
+            if dd > max_dd:
+                max_dd = dd
+            if equity <= 24000:
+                ruin_count += 1
+                break
+
+        max_drawdowns.append(max_dd)
+        final_balances.append(equity)
+
+    dd_arr = np.array(max_drawdowns)
+    bal_arr = np.array(final_balances)
+
+    return {
+        "n_simulations": n_simulations,
+        "n_trades": len(trade_pnls),
+        "total_pnl": round(float(pnls.sum()), 2),
+        "avg_trade": round(float(pnls.mean()), 2),
+        "drawdown_percentiles": {
+            "p50": round(float(np.percentile(dd_arr, 50)), 2),
+            "p75": round(float(np.percentile(dd_arr, 75)), 2),
+            "p90": round(float(np.percentile(dd_arr, 90)), 2),
+            "p95": round(float(np.percentile(dd_arr, 95)), 2),
+            "p99": round(float(np.percentile(dd_arr, 99)), 2),
+            "max": round(float(dd_arr.max()), 2),
+        },
+        "final_balance_percentiles": {
+            "p5": round(float(np.percentile(bal_arr, 5)), 2),
+            "p25": round(float(np.percentile(bal_arr, 25)), 2),
+            "p50": round(float(np.percentile(bal_arr, 50)), 2),
+            "p75": round(float(np.percentile(bal_arr, 75)), 2),
+            "p95": round(float(np.percentile(bal_arr, 95)), 2),
+        },
+        "ruin_probability": round(ruin_count / n_simulations * 100, 2),
+        "avg_max_drawdown": round(float(dd_arr.mean()), 2),
+    }

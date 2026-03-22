@@ -14,7 +14,7 @@ import backtest as bt
 
 app = Flask(__name__)
 
-VERSION = "v2.0"
+VERSION = "v3.0"
 engine = TradingEngine()
 _engine_started = False
 _start_lock = threading.Lock()
@@ -132,6 +132,54 @@ def api_reset():
     db.reset_db()
     engine._log("Engine reset to fresh $25,000 start", level="INFO")
     return jsonify({"status": "reset", "balance": STARTING_BALANCE})
+
+
+@app.route("/api/monte-carlo")
+def api_monte_carlo():
+    """Run Monte Carlo drawdown analysis on closed trades."""
+    # Get trade PnLs from either backtest or live trades
+    source = request.args.get("source", "live")  # "live" or "backtest"
+    if source == "live":
+        trades = db.load_trades()
+        if not trades or len(trades) < 5:
+            return jsonify({"error": "Need at least 5 closed trades for Monte Carlo analysis"})
+        pnls = [t["pnl"] for t in trades]
+    else:
+        # Run backtest first, then use those PnLs
+        symbol = request.args.get("symbol", "XAUUSD").upper()
+        days = int(request.args.get("days", 180))
+        days = min(max(days, 90), 365)
+        result = bt.run_full_backtest(symbols=[symbol], period_days=days)
+        sym_result = result.get("results", {}).get(symbol, {})
+        if "error" in sym_result:
+            return jsonify(sym_result)
+        # Extract PnLs from backtest trades
+        bt_trades = sym_result.get("trades_count", 0)
+        if bt_trades < 5:
+            return jsonify({"error": f"Backtest produced only {bt_trades} trades"})
+        # Re-run to get actual trade PnLs
+        hist = bt.fetch_history(symbol, days)
+        if hist is None:
+            return jsonify({"error": "Could not fetch history"})
+        from trading_engine import SIGNAL_THRESHOLD, ATR_STOP_MULT, RISK_REWARD_RATIO, MAX_RISK_PER_TRADE_PCT
+        params = {"signal_threshold": SIGNAL_THRESHOLD, "atr_stop_mult": ATR_STOP_MULT,
+                  "risk_reward": RISK_REWARD_RATIO, "max_risk_pct": MAX_RISK_PER_TRADE_PCT}
+        bt_result = bt.run_backtest(symbol, hist, params)
+        pnls = [t.pnl_net for t in bt_result.trades]
+
+    n_sims = int(request.args.get("simulations", 1000))
+    n_sims = min(max(n_sims, 100), 5000)
+    result = bt.monte_carlo_drawdown(pnls, n_simulations=n_sims)
+    return jsonify(result)
+
+
+@app.route("/api/journal")
+def api_journal():
+    """Return recent signal journal entries."""
+    limit = int(request.args.get("limit", 100))
+    limit = min(max(limit, 10), 500)
+    signals = db.load_signals(limit=limit)
+    return jsonify({"signals": signals, "count": len(signals)})
 
 
 @app.route("/api/debug")

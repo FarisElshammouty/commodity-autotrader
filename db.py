@@ -98,6 +98,21 @@ def _init_pg():
                     updated_at TEXT NOT NULL
                 )
             """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS signal_journal (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT,
+                    strength DOUBLE PRECISION,
+                    reasons TEXT,
+                    action TEXT NOT NULL,
+                    price DOUBLE PRECISION,
+                    adx DOUBLE PRECISION,
+                    rsi DOUBLE PRECISION,
+                    session_name TEXT
+                )
+            """)
             conn.commit()
         finally:
             conn.close()
@@ -128,6 +143,20 @@ def _init_sqlite():
                     key TEXT PRIMARY KEY,
                     value REAL NOT NULL,
                     updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS signal_journal (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT,
+                    strength REAL,
+                    reasons TEXT,
+                    action TEXT NOT NULL,
+                    price REAL,
+                    adx REAL,
+                    rsi REAL,
+                    session_name TEXT
                 );
             """)
             conn.commit()
@@ -251,6 +280,56 @@ def load_state() -> dict | None:
             conn.close()
 
 
+def save_signal(entry: dict) -> None:
+    """Log a signal event to the journal."""
+    with _lock:
+        conn = _get_conn()
+        try:
+            if _use_pg:
+                cur = conn.cursor()
+                cur.execute(
+                    """INSERT INTO signal_journal
+                       (timestamp, symbol, side, strength, reasons, action, price, adx, rsi, session_name)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                    (entry["timestamp"], entry["symbol"], entry.get("side"),
+                     entry.get("strength"), entry.get("reasons"), entry["action"],
+                     entry.get("price"), entry.get("adx"), entry.get("rsi"),
+                     entry.get("session_name")),
+                )
+                conn.commit()
+            else:
+                conn.execute(
+                    """INSERT INTO signal_journal
+                       (timestamp, symbol, side, strength, reasons, action, price, adx, rsi, session_name)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (entry["timestamp"], entry["symbol"], entry.get("side"),
+                     entry.get("strength"), entry.get("reasons"), entry["action"],
+                     entry.get("price"), entry.get("adx"), entry.get("rsi"),
+                     entry.get("session_name")),
+                )
+                conn.commit()
+        finally:
+            conn.close()
+
+
+def load_signals(limit: int = 200) -> list[dict]:
+    """Load recent signal journal entries."""
+    with _lock:
+        conn = _get_conn()
+        try:
+            if _use_pg:
+                cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+                cur.execute("SELECT * FROM signal_journal ORDER BY id DESC LIMIT %s", (limit,))
+                return [dict(row) for row in cur.fetchall()]
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM signal_journal ORDER BY id DESC LIMIT ?", (limit,)
+                ).fetchall()
+                return [dict(row) for row in rows]
+        finally:
+            conn.close()
+
+
 def reset_db() -> None:
     """Wipe all data — fresh start."""
     with _lock:
@@ -260,11 +339,13 @@ def reset_db() -> None:
                 cur = conn.cursor()
                 cur.execute("DELETE FROM closed_trades")
                 cur.execute("DELETE FROM engine_state")
+                cur.execute("DELETE FROM signal_journal")
                 conn.commit()
             else:
                 conn.executescript("""
                     DELETE FROM closed_trades;
                     DELETE FROM engine_state;
+                    DELETE FROM signal_journal;
                 """)
                 conn.commit()
         finally:
