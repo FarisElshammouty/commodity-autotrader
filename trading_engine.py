@@ -727,6 +727,12 @@ class TradingEngine:
 
     def _can_open_position(self, symbol: str, side: str = None) -> tuple[bool, str]:
         """Check if we're allowed to open a new position."""
+        # Weekend guard: markets closed Saturday & Sunday (UTC)
+        from datetime import datetime, timezone
+        day_of_week = datetime.now(timezone.utc).weekday()  # 0=Mon, 5=Sat, 6=Sun
+        if day_of_week >= 5:
+            return False, "Markets closed (weekend)"
+
         if len(self.positions) >= MAX_OPEN_POSITIONS:
             return False, "Max open positions reached"
 
