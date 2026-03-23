@@ -187,9 +187,9 @@
   .attr-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 
   /* ── Heatmap ──────────────────────────────────────── */
-  .heatmap-table { border-collapse: collapse; font-size: 10px; }
-  .heatmap-table th { padding: 4px 8px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
-  .heatmap-table td { padding: 6px 10px; text-align: center; font-weight: 600; border-radius: 3px; min-width: 40px; }
+  .heatmap-table { border-collapse: collapse; font-size: 10px; white-space: nowrap; }
+  .heatmap-table th { padding: 3px 5px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
+  .heatmap-table td { padding: 4px 6px; text-align: center; font-weight: 600; border-radius: 3px; min-width: 32px; font-size: 9px; }
 
   /* ── Drawdown Recovery ────────────────────────────── */
   .dd-bar-bg { height: 28px; background: #1e293b; border-radius: 14px; overflow: hidden; position: relative; margin: 12px 0; }
@@ -606,7 +606,7 @@ function updateDashboard(s) {
   if (s.heatmap && s.heatmap.length > 0) {
     const hm = s.heatmap;
     const days = ['Mon','Tue','Wed','Thu','Fri'];
-    const hours = [...new Set(hm.map(h => h.hour))].sort((a,b) => a - b);
+    const hours = Array.from({length: 24}, (_, i) => i);
     const lookup = {};
     hm.forEach(h => { lookup[h.day + '_' + h.hour] = h; });
     let html = '<table class="heatmap-table"><tr><th></th>';
