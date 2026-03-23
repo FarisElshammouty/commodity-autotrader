@@ -1861,13 +1861,13 @@ class TradingEngine:
             "winning_trades": self.winning_trades,
             "win_rate": round(win_rate, 1),
             "open_positions": [p.to_dict() for p in self.positions.values()],
-            "closed_trades": [t.to_dict() for t in self.closed_trades[-50:]],
+            "closed_trades": [t.to_dict() for t in self.closed_trades[-30:]],
             "prices": {k: round(v, 4) for k, v in self.prices.items()},
             "indicators": {
                 k: {ik: round(iv, 4) if isinstance(iv, float) else iv for ik, iv in v.items()}
                 for k, v in self.indicators.items()
             },
-            "price_history": {sym: list(hist) for sym, hist in self.price_history.items()},
+            "price_history": {sym: list(hist)[-80:] for sym, hist in self.price_history.items()},
             "htf_indicators": {
                 k: {ik: round(iv, 4) if isinstance(iv, float) else iv for ik, iv in v.items()}
                 for k, v in self.htf_indicators.items()
@@ -1898,7 +1898,7 @@ class TradingEngine:
                     self.prices.get(p.symbol, p.entry_price)
                 )) for p in self.positions.values()
             ), 2),
-            "log": self.trade_log[-100:],
+            "log": self.trade_log[-50:],
             "status": self.status,
             "timestamp": datetime.now().isoformat(),
         }
@@ -1954,8 +1954,14 @@ class TradingEngine:
                 time.sleep(300)  # 5 minutes
 
         def optimization_loop():
-            """Run walk-forward optimization daily to update adaptive parameters."""
-            time.sleep(120)  # wait 2 min for startup
+            """Run walk-forward optimization daily to update adaptive parameters.
+            Disabled on cloud free tier — use /api/backtest/optimize instead.
+            """
+            is_cloud = bool(os.environ.get("RENDER_EXTERNAL_URL"))
+            if is_cloud:
+                self._log("Background optimization DISABLED on free tier (use API endpoint instead)", level="INFO")
+                return  # exit immediately — don't run on free tier
+            time.sleep(3600)  # wait 1 hour for startup on local
             while self.running:
                 try:
                     self._run_background_optimization()
@@ -1972,7 +1978,10 @@ class TradingEngine:
         ai_status = "AI ENABLED (Groq)" if self.ai_brain.enabled else "AI disabled (no GROQ_API_KEY)"
         self._log(ai_status)
         self._log("Multi-timeframe: 1H trend filter active (updates every 5min)")
-        self._log("Adaptive parameters: walk-forward optimization runs daily")
+        if bool(os.environ.get("RENDER_EXTERNAL_URL")):
+            self._log("Adaptive parameters: background optimization disabled (free tier)")
+        else:
+            self._log("Adaptive parameters: walk-forward optimization runs daily")
 
     def stop(self):
         self.running = False
