@@ -701,7 +701,7 @@ class TradingEngine:
         adx = self._adx(highs, lows, closes, 14)
 
         # Price momentum (rate of change over 5 periods)
-        roc_5 = ((closes[-1] - closes[-6]) / closes[-6] * 100) if len(closes) >= 6 else 0
+        roc_5 = float((closes[-1] - closes[-6]) / closes[-6] * 100) if len(closes) >= 6 else 0.0
 
         current_price = float(closes[-1])
 
@@ -738,24 +738,24 @@ class TradingEngine:
         self.indicators[symbol] = {
             "sma_10": sma_10,
             "sma_20": sma_20,
-            "ema_12": ema_12,
-            "ema_26": ema_26,
-            "rsi": rsi,
-            "macd_line": macd_line,
-            "macd_signal": macd_signal,
-            "macd_histogram": macd_histogram,
-            "bb_upper": bb_upper,
-            "bb_mid": bb_mid,
-            "bb_lower": bb_lower,
-            "atr": atr,
-            "adx": adx,
-            "adx_rising": adx_rising,
+            "ema_12": float(ema_12),
+            "ema_26": float(ema_26),
+            "rsi": float(rsi),
+            "macd_line": float(macd_line),
+            "macd_signal": float(macd_signal),
+            "macd_histogram": float(macd_histogram),
+            "bb_upper": float(bb_upper),
+            "bb_mid": float(bb_mid),
+            "bb_lower": float(bb_lower),
+            "atr": float(atr),
+            "adx": float(adx),
+            "adx_rising": bool(adx_rising),
             "roc_5": roc_5,
             "divergence": divergence,
-            "volume_ratio": volume_ratio,
+            "volume_ratio": float(volume_ratio),
             "price": current_price,
             "trend": "BULLISH" if sma_10 > sma_20 else "BEARISH",
-            "bb_position": (current_price - bb_lower) / (bb_upper - bb_lower) if bb_upper != bb_lower else 0.5,
+            "bb_position": float((current_price - bb_lower) / (bb_upper - bb_lower)) if bb_upper != bb_lower else 0.5,
         }
 
     @staticmethod
@@ -784,7 +784,7 @@ class TradingEngine:
         avg_gain = sum(gains) / period if gains else 0.0001
         avg_loss = sum(losses) / period if losses else 0.0001
         rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
+        return float(100 - (100 / (1 + rs)))
 
     @staticmethod
     def _atr(highs, lows, closes, period=14):
@@ -1071,19 +1071,20 @@ class TradingEngine:
             summaries.append(f"{symbol}={sig_str}")
 
             # Trade Journal: log every signal evaluation
+            # Note: convert all numeric values to native Python types for PostgreSQL compatibility
             journal_entry = {
                 "timestamp": datetime.now().isoformat(),
                 "symbol": symbol,
-                "price": price,
-                "adx": ind.get("adx", 0),
-                "rsi": ind.get("rsi", 50),
+                "price": float(price) if price is not None else None,
+                "adx": float(ind.get("adx", 0)),
+                "rsi": float(ind.get("rsi", 50)),
                 "session_name": session["name"],
             }
             if not signal:
                 continue
 
             journal_entry["side"] = signal["side"].value
-            journal_entry["strength"] = signal["strength"]
+            journal_entry["strength"] = float(signal["strength"])
             journal_entry["reasons"] = "; ".join(signal["reasons"])
 
             can_open, reason = self._can_open_position(symbol, side=signal["side"].value)
@@ -1092,15 +1093,15 @@ class TradingEngine:
                 journal_entry["action"] = f"BLOCKED:{reason}"
                 try:
                     db.save_signal(journal_entry)
-                except Exception:
-                    pass
+                except Exception as e:
+                    self._log(f"Journal save error (blocked): {e}", level="ERROR")
                 continue
 
             journal_entry["action"] = "EXECUTED"
             try:
                 db.save_signal(journal_entry)
-            except Exception:
-                pass
+            except Exception as e:
+                self._log(f"Journal save error (executed): {e}", level="ERROR")
 
             # AI Signal Enhancement
             ai_result = None

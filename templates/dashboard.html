@@ -710,7 +710,7 @@ function updateDashboard(s) {
   // ── Win/Loss Heatmap (Feature 11) ──
   if (s.heatmap && s.heatmap.length > 0) {
     const hm = s.heatmap;
-    const days = ['Mon','Tue','Wed','Thu','Fri'];
+    const days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
     const hours = Array.from({length: 24}, (_, i) => i);
     const lookup = {};
     hm.forEach(h => { lookup[h.day + '_' + h.hour] = h; });
