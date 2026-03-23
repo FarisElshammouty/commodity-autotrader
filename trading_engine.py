@@ -854,17 +854,48 @@ class TradingEngine:
         return default
 
     def _run_background_optimization(self):
-        """Run walk-forward optimization for all symbols and update adaptive params."""
+        """Run walk-forward optimization for top symbols and update adaptive params.
+        On cloud free tier, uses reduced grid and fewer symbols to avoid OOM.
+        """
         import backtest as bt
-        self._log("Starting background walk-forward optimization for adaptive params...", level="INFO")
-        for sym in SYMBOLS:
+        import gc
+        is_cloud = bool(os.environ.get("RENDER_EXTERNAL_URL"))
+
+        # On free tier, only optimize the top 3 most-traded symbols with reduced grid
+        if is_cloud:
+            trade_counts = {}
+            for t in self.trade_history:
+                sym = t.get("symbol", "")
+                trade_counts[sym] = trade_counts.get(sym, 0) + 1
+            top_syms = sorted(trade_counts, key=trade_counts.get, reverse=True)[:3]
+            if not top_syms:
+                top_syms = ["XAUUSD", "BRENT", "EURUSD"]
+            saved_grid = bt.PARAM_GRID.copy()
+            bt.PARAM_GRID = {
+                "signal_threshold": [1.5, 2.5],
+                "atr_stop_mult":    [2.0],
+                "risk_reward":      [1.5, 2.5],
+                "max_risk_pct":     [0.20],
+            }
+            opt_days = 90
+        else:
+            top_syms = list(SYMBOLS.keys())
+            opt_days = 180
+
+        self._log(f"Starting background optimization for {len(top_syms)} symbols...", level="INFO")
+        for sym in top_syms:
             try:
-                result = bt.run_optimization(sym, period_days=180)
+                gc.collect()
+                result = bt.run_optimization(sym, period_days=opt_days)
                 if "best_params" in result and result["best_params"]:
                     self.symbol_params[sym] = result["best_params"]
                     self._log(f"[ADAPTIVE] {sym} optimized: {result['best_params']}", level="INFO")
             except Exception as e:
                 self._log(f"[ADAPTIVE] Optimization failed for {sym}: {e}", level="WARN")
+
+        if is_cloud:
+            bt.PARAM_GRID = saved_grid
+
         self._last_optimization_run = time.time()
         self._log("Background optimization complete.", level="INFO")
 

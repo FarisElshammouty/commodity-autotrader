@@ -66,23 +66,49 @@ def backtest_page():
 @app.route("/api/backtest/run")
 def api_backtest_run():
     """Run backtest for all symbols using current live parameters."""
-    days = int(request.args.get("days", 180))
-    days = min(max(days, 30), 365)  # clamp 30–365
+    is_cloud = bool(os.environ.get("RENDER_EXTERNAL_URL"))
+    days = int(request.args.get("days", 90 if is_cloud else 180))
+    days = min(max(days, 30), 180 if is_cloud else 365)  # clamp tighter on cloud
     syms = request.args.get("symbols", "").strip()
     symbol_list = [s.strip().upper() for s in syms.split(",") if s.strip()] if syms else None
+    # On free tier, limit to max 5 symbols at once to avoid OOM
+    if is_cloud and symbol_list is None:
+        symbol_list = list(bt.SYMBOLS.keys())[:5]
+    elif is_cloud and symbol_list and len(symbol_list) > 5:
+        symbol_list = symbol_list[:5]
     result = bt.run_full_backtest(symbols=symbol_list, period_days=days)
     return jsonify(result)
 
 
 @app.route("/api/backtest/optimize")
 def api_backtest_optimize():
-    """Run walk-forward optimization for a single symbol."""
+    """Run walk-forward optimization for a single symbol.
+    Uses a reduced param grid on cloud to avoid OOM on free tier (512MB).
+    """
     symbol = request.args.get("symbol", "XAUUSD").upper()
     if symbol not in bt.SYMBOLS:
         return jsonify({"error": f"Unknown symbol: {symbol}"}), 400
-    days = int(request.args.get("days", 180))
-    days = min(max(days, 90), 365)
-    result = bt.run_optimization(symbol, period_days=days)
+    is_cloud = bool(os.environ.get("RENDER_EXTERNAL_URL"))
+    days = int(request.args.get("days", 90 if is_cloud else 180))
+    days = min(max(days, 30), 180 if is_cloud else 365)
+    # On free tier, use a reduced parameter grid to prevent OOM
+    if is_cloud:
+        import gc
+        gc.collect()  # free memory before heavy operation
+        saved_grid = bt.PARAM_GRID.copy()
+        bt.PARAM_GRID = {
+            "signal_threshold": [1.5, 2.5],
+            "atr_stop_mult":    [2.0],
+            "risk_reward":      [1.5, 2.5],
+            "max_risk_pct":     [0.20],
+        }
+        try:
+            result = bt.run_optimization(symbol, period_days=days)
+        finally:
+            bt.PARAM_GRID = saved_grid
+            gc.collect()
+    else:
+        result = bt.run_optimization(symbol, period_days=days)
     return jsonify(result)
 
 
