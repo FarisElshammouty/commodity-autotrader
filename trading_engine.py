@@ -1080,11 +1080,6 @@ class TradingEngine:
                 "session_name": session["name"],
             }
             if not signal:
-                journal_entry["action"] = "NO_SIGNAL"
-                try:
-                    db.save_signal(journal_entry)
-                except Exception:
-                    pass
                 continue
 
             journal_entry["side"] = signal["side"].value
@@ -1858,6 +1853,11 @@ class TradingEngine:
             "drawdown_recovery": self._get_drawdown_recovery(),
             "consecutive_losses": self._consecutive_losses,
             "loss_breaker_until": self._loss_breaker_until,
+            "vol_norm_count": sum(
+                1 for sym in SYMBOLS
+                if len(self._atr_history.get(sym, [])) >= 10
+                and self._atr_history[sym][-1] > sorted(self._atr_history[sym])[len(self._atr_history[sym]) // 2] * 1.5
+            ),
             "portfolio_heat": round(sum(
                 max(0, self._convert_pnl_to_usd(
                     p.symbol,

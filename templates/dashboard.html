@@ -17,8 +17,9 @@
   .header {
     background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
     border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
+    padding: 14px 24px;
     display: flex; justify-content: space-between; align-items: center;
+    position: sticky; top: 0; z-index: 100;
   }
   .header h1 { font-size: 20px; font-weight: 700; }
   .header h1 span { color: var(--accent); }
@@ -34,14 +35,14 @@
   .container { max-width: 1600px; margin: 0 auto; padding: 20px; }
 
   /* ── Metrics Row ────────────────────────────────── */
-  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
   .metric {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px; text-align: center;
+    padding: 14px; text-align: center;
   }
-  .metric .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-  .metric .value { font-size: 24px; font-weight: 700; }
-  .metric .sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .metric .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+  .metric .value { font-size: 22px; font-weight: 700; }
+  .metric .sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
   .positive { color: var(--green); }
   .negative { color: var(--red); }
   .warning { color: var(--yellow); }
@@ -49,20 +50,44 @@
   /* ── Floor Gauge ────────────────────────────────── */
   .floor-gauge {
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
-    padding: 16px; margin-bottom: 20px;
+    padding: 14px; margin-bottom: 16px;
   }
   .floor-gauge .bar-bg {
-    height: 24px; background: #1e293b; border-radius: 12px; overflow: hidden; position: relative; margin-top: 8px;
+    height: 22px; background: #1e293b; border-radius: 11px; overflow: hidden; position: relative; margin-top: 6px;
   }
   .floor-gauge .bar-fill {
-    height: 100%; border-radius: 12px; transition: width 0.5s ease;
+    height: 100%; border-radius: 11px; transition: width 0.5s ease;
     display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: 700; min-width: 60px;
+    font-size: 11px; font-weight: 700; min-width: 50px;
   }
-  .floor-gauge .labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .floor-gauge .labels { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Collapsible Sections ────────────────────────── */
+  .section {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid transparent; transition: border-color 0.2s;
+  }
+  .section-header:hover { background: rgba(59,130,246,0.03); }
+  .section.open .section-header { border-bottom-color: var(--border); }
+  .section-header h2 {
+    font-size: 13px; font-weight: 600; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1px; margin: 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-header .chevron {
+    color: var(--muted); font-size: 14px; transition: transform 0.2s;
+  }
+  .section.open .section-header .chevron { transform: rotate(180deg); }
+  .section-body { display: none; padding: 16px; }
+  .section.open .section-body { display: block; }
 
   /* ── Grid Layout ────────────────────────────────── */
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
   @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
 
   .card {
@@ -70,25 +95,25 @@
     padding: 16px; overflow: hidden;
   }
   .card h2 {
-    font-size: 14px; font-weight: 600; color: var(--muted);
+    font-size: 13px; font-weight: 600; color: var(--muted);
     text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px;
     padding-bottom: 8px; border-bottom: 1px solid var(--border);
   }
 
   /* ── Prices Grid ────────────────────────────────── */
-  .prices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .prices-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
   .price-card {
-    background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 12px;
+    background: #0f172a; border: 1px solid var(--border); border-radius: 8px; padding: 10px;
   }
-  .price-card .sym { font-size: 13px; font-weight: 700; color: var(--accent); }
-  .price-card .prc { font-size: 22px; font-weight: 700; margin: 4px 0; }
-  .price-card .ind { font-size: 10px; color: var(--muted); line-height: 1.6; }
-  .price-card .ind span { display: inline-block; margin-right: 8px; }
+  .price-card .sym { font-size: 12px; font-weight: 700; color: var(--accent); }
+  .price-card .prc { font-size: 20px; font-weight: 700; margin: 3px 0; }
+  .price-card .ind { font-size: 9px; color: var(--muted); line-height: 1.6; }
+  .price-card .ind span { display: inline-block; margin-right: 6px; }
   .trend-BULLISH { color: var(--green) !important; }
   .trend-BEARISH { color: var(--red) !important; }
   .htf-badge {
-    display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px;
-    font-weight: 700; letter-spacing: 0.5px; margin-top: 4px;
+    display: inline-block; padding: 2px 5px; border-radius: 4px; font-size: 9px;
+    font-weight: 700; letter-spacing: 0.5px; margin-top: 3px;
   }
   .htf-bullish { background: rgba(34,197,94,0.15); color: var(--green); }
   .htf-bearish { background: rgba(239,68,68,0.15); color: var(--red); }
@@ -112,7 +137,7 @@
 
   /* ── Trade History ──────────────────────────────── */
   .trade-entry {
-    padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 12px;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 12px;
   }
   .trade-entry:last-child { border-bottom: none; }
   .trade-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
@@ -121,54 +146,54 @@
 
   /* ── Activity Log ───────────────────────────────── */
   .log-area {
-    max-height: 400px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace;
-    font-size: 11px; line-height: 1.7;
+    max-height: 350px; overflow-y: auto; font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 10px; line-height: 1.7;
   }
-  .log-entry { padding: 3px 0; border-bottom: 1px solid rgba(30,41,59,0.5); }
-  .log-time { color: var(--muted); margin-right: 8px; }
+  .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(30,41,59,0.5); }
+  .log-time { color: var(--muted); margin-right: 6px; }
   .log-TRADE { color: var(--accent); }
   .log-ERROR { color: var(--red); }
   .log-CRITICAL { color: var(--red); font-weight: 700; }
   .log-WARN { color: var(--yellow); }
   .log-INFO { color: var(--muted); }
 
-  .empty { color: var(--muted); font-style: italic; text-align: center; padding: 20px; }
+  .empty { color: var(--muted); font-style: italic; text-align: center; padding: 16px; }
 
   /* ── Charts Row ──────────────────────────────────── */
   .charts-row {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;
   }
   @media (max-width: 1400px) { .charts-row { grid-template-columns: repeat(3, 1fr) !important; } }
   @media (max-width: 1000px) { .charts-row { grid-template-columns: repeat(2, 1fr) !important; } }
   @media (max-width: 700px)  { .charts-row { grid-template-columns: 1fr !important; } }
   .chart-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
   }
   .chart-card h3 {
     font-size: 11px; font-weight: 600; color: var(--muted);
-    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;
     display: flex; justify-content: space-between; align-items: center;
   }
   .chart-card h3 .chart-price { color: var(--text); font-size: 14px; font-weight: 700; }
-  .chart-container { width: 100%; height: 180px; }
+  .chart-container { width: 100%; height: 160px; }
 
   /* ── Sentiment Row ─────────────────────────────────── */
   .sentiment-row {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px;
   }
   @media (max-width: 1200px) { .sentiment-row { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 700px)  { .sentiment-row { grid-template-columns: 1fr; } }
   .sent-card {
-    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
   }
   .sent-card .sent-header {
-    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;
   }
-  .sent-card .sent-sym { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .sent-card .sent-sym { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
   .sent-card .sent-score { font-size: 16px; font-weight: 700; }
-  .sent-card .sent-bar-bg { height: 6px; background: #1e293b; border-radius: 3px; position: relative; }
+  .sent-card .sent-bar-bg { height: 5px; background: #1e293b; border-radius: 3px; position: relative; }
   .sent-card .sent-bar-fill { height: 100%; border-radius: 3px; transition: width 0.5s, background 0.5s; }
-  .sent-card .sent-summary { font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+  .sent-card .sent-summary { font-size: 9px; color: var(--muted); margin-top: 5px; line-height: 1.4; }
 
   /* ── AI Badge ──────────────────────────────────────── */
   .ai-badge {
@@ -189,15 +214,16 @@
   /* ── Heatmap ──────────────────────────────────────── */
   .heatmap-table { border-collapse: collapse; font-size: 10px; white-space: nowrap; }
   .heatmap-table th { padding: 3px 5px; color: var(--muted); font-size: 9px; text-transform: uppercase; }
-  .heatmap-table td { padding: 4px 6px; text-align: center; font-weight: 600; border-radius: 3px; min-width: 32px; font-size: 9px; }
+  .heatmap-table td { padding: 4px 6px; text-align: center; font-weight: 600; border-radius: 3px; min-width: 30px; font-size: 9px; }
 
   /* ── Drawdown Recovery ────────────────────────────── */
-  .dd-bar-bg { height: 28px; background: #1e293b; border-radius: 14px; overflow: hidden; position: relative; margin: 12px 0; }
-  .dd-bar-fill { height: 100%; border-radius: 14px; transition: width 0.5s; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
-  .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; font-size: 12px; }
+  .dd-bar-bg { height: 26px; background: #1e293b; border-radius: 13px; overflow: hidden; position: relative; margin: 10px 0; }
+  .dd-bar-fill { height: 100%; border-radius: 13px; transition: width 0.5s; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+  .dd-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; font-size: 12px; }
   .dd-stat { text-align: center; }
-  .dd-stat .dd-val { font-size: 18px; font-weight: 700; }
-  .dd-stat .dd-lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .dd-stat .dd-val { font-size: 16px; font-weight: 700; }
+  .dd-stat .dd-lbl { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
   .session-badge {
     padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-right: 6px;
   }
@@ -207,10 +233,31 @@
   .session-ASIAN { background: rgba(234,179,8,0.2); color: var(--yellow); }
   .session-OFF_HOURS { background: rgba(239,68,68,0.15); color: var(--red); }
 
+  /* ── Risk Monitor Inline ────────────────────────── */
+  .risk-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .risk-item { text-align: center; background: #0f172a; border-radius: 8px; padding: 12px 8px; }
+  .risk-item .label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .risk-item .value { font-size: 20px; font-weight: 700; }
+  .risk-item .sub { font-size: 9px; color: var(--muted); margin-top: 3px; }
+
+  /* ── Journal ──────────────────────────────────────── */
+  .journal-entry { padding: 4px 0; border-bottom: 1px solid rgba(30,41,59,0.5); font-size: 11px; font-family: 'Cascadia Code','Fira Code',monospace; }
+  .journal-entry .j-time { color: var(--muted); margin-right: 6px; }
+  .journal-entry .j-sym { color: var(--accent); font-weight: 600; margin-right: 4px; }
+  .journal-entry .j-exec { color: var(--green); font-weight: 700; }
+  .journal-entry .j-block { color: var(--yellow); font-weight: 600; }
+  .journal-entry .j-reasons { color: var(--muted); font-size: 10px; padding-left: 16px; }
+
   /* ── Scrollbar ──────────────────────────────────── */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Section label ──────────────────────────────── */
+  .section-label {
+    font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 1px; margin-bottom: 6px; margin-top: 4px;
+  }
 </style>
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -249,7 +296,7 @@
     <div class="metric">
       <div class="label">Buffer to Floor</div>
       <div class="value" id="mBuffer">$1,000.00</div>
-      <div class="sub">Floor: $24,000</div>
+      <div class="sub" id="mFloorLabel">Floor: $24,000</div>
     </div>
     <div class="metric">
       <div class="label">Total Trades</div>
@@ -265,137 +312,172 @@
   <!-- Floor Gauge -->
   <div class="floor-gauge">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:12px;font-weight:600;color:var(--muted)">EQUITY SAFETY GAUGE</span>
+      <span style="font-size:11px;font-weight:600;color:var(--muted)">EQUITY SAFETY GAUGE</span>
       <span style="font-size:11px" id="gaugeLabel">$25,000 / $24,000 floor</span>
     </div>
     <div class="bar-bg">
       <div class="bar-fill" id="floorBar" style="width:100%;background:var(--green)">100%</div>
     </div>
     <div class="labels">
-      <span>$24,000 (HARD FLOOR)</span>
+      <span id="floorMin">$24,000 (HARD FLOOR)</span>
       <span>$25,000 (START)</span>
       <span>$26,000+</span>
     </div>
   </div>
 
-  <!-- Equity Curve Chart -->
-  <div class="card" style="margin-bottom:20px">
-    <h2>Equity Curve <span id="ecInfo" style="color:var(--accent);font-size:11px;font-weight:400;margin-left:8px"></span></h2>
-    <div id="equityCurveContainer" style="width:100%;height:260px"></div>
-  </div>
-
-  <!-- Trade Journal (recent signals) -->
-  <div class="card" style="margin-bottom:20px">
-    <h2>Trade Journal <span style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px">(Last 50 signals)</span></h2>
-    <div id="journalArea" style="max-height:300px;overflow-y:auto;font-size:11px;font-family:'Cascadia Code','Fira Code',monospace;line-height:1.7">
-      <div class="empty">Loading signal journal...</div>
+  <!-- ═══════ EQUITY CURVE ═══════ -->
+  <div class="section open" id="sec-equity">
+    <div class="section-header" onclick="toggleSection('sec-equity')">
+      <h2>Equity Curve <span id="ecInfo" style="color:var(--accent);font-size:11px;font-weight:400"></span></h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body" style="padding:12px">
+      <div id="equityCurveContainer" style="width:100%;height:240px"></div>
     </div>
   </div>
 
-  <!-- Price Charts — Energy -->
-  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:4px">Energy</div>
-  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
-    <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
-    <div class="chart-card"><h3><span>WTI Crude (WTI)</span><span class="chart-price" id="cp-WTI">--</span></h3><div class="chart-container" id="cc-WTI"></div></div>
-    <div class="chart-card"><h3><span>Natural Gas (NGAS)</span><span class="chart-price" id="cp-NGAS">--</span></h3><div class="chart-container" id="cc-NGAS"></div></div>
+  <!-- ═══════ RISK MONITOR ═══════ -->
+  <div class="section open" id="sec-risk">
+    <div class="section-header" onclick="toggleSection('sec-risk')">
+      <h2>Risk Monitor</h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="risk-grid" id="riskMonitor">
+        <div class="risk-item"><div class="label">Portfolio Heat</div><div class="value" id="rmHeat">$0</div><div class="sub">Max: 1% of equity</div></div>
+        <div class="risk-item"><div class="label">Consecutive Losses</div><div class="value" id="rmLosses">0</div><div class="sub" id="rmBreakerSub">Breaker: inactive</div></div>
+        <div class="risk-item"><div class="label">Vol-Norm Active</div><div class="value" id="rmVolNorm">--</div><div class="sub">ATR vs median check</div></div>
+        <div class="risk-item"><div class="label">Price Staleness</div><div class="value" id="rmStaleness">OK</div><div class="sub">Max 2min age</div></div>
+        <div class="risk-item"><div class="label">Drawdown</div><div class="value" id="rmDrawdown">--</div><div class="sub" id="rmDrawdownSub">Recovery progress</div></div>
+        <div class="risk-item"><div class="label">Daily Loss Cap</div><div class="value" id="rmDailyLoss">$0</div><div class="sub">Max: $600/day</div></div>
+      </div>
+    </div>
   </div>
 
-  <!-- Price Charts — Metals -->
-  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Metals</div>
-  <div class="charts-row" style="grid-template-columns:repeat(5,1fr)">
-    <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
-    <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
-    <div class="chart-card"><h3><span>Platinum</span><span class="chart-price" id="cp-PLATINUM">--</span></h3><div class="chart-container" id="cc-PLATINUM"></div></div>
-    <div class="chart-card"><h3><span>Palladium</span><span class="chart-price" id="cp-PALLADIUM">--</span></h3><div class="chart-container" id="cc-PALLADIUM"></div></div>
-    <div class="chart-card"><h3><span>Copper</span><span class="chart-price" id="cp-COPPER">--</span></h3><div class="chart-container" id="cc-COPPER"></div></div>
+  <!-- ═══════ OPEN POSITIONS & CLOSED TRADES ═══════ -->
+  <div class="grid">
+    <div class="section open" id="sec-positions">
+      <div class="section-header" onclick="toggleSection('sec-positions')">
+        <h2>Open Positions <span id="posCount" style="color:var(--accent)"></span></h2>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="section-body" id="positions"><div class="empty">No open positions</div></div>
+    </div>
+    <div class="section open" id="sec-closed">
+      <div class="section-header" onclick="toggleSection('sec-closed')">
+        <h2>Closed Trades</h2>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="section-body" style="max-height:400px;overflow-y:auto" id="closedTrades"><div class="empty">No trades yet</div></div>
+    </div>
   </div>
 
-  <!-- Price Charts — Forex -->
-  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Forex</div>
-  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
-    <div class="chart-card"><h3><span>EUR/USD</span><span class="chart-price" id="cp-EURUSD">--</span></h3><div class="chart-container" id="cc-EURUSD"></div></div>
-    <div class="chart-card"><h3><span>GBP/USD</span><span class="chart-price" id="cp-GBPUSD">--</span></h3><div class="chart-container" id="cc-GBPUSD"></div></div>
-    <div class="chart-card"><h3><span>USD/JPY</span><span class="chart-price" id="cp-USDJPY">--</span></h3><div class="chart-container" id="cc-USDJPY"></div></div>
-  </div>
-
-  <!-- Price Charts — Indices -->
-  <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:12px">Indices</div>
-  <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
-    <div class="chart-card"><h3><span>S&P 500</span><span class="chart-price" id="cp-SP500">--</span></h3><div class="chart-container" id="cc-SP500"></div></div>
-    <div class="chart-card"><h3><span>Nasdaq 100</span><span class="chart-price" id="cp-NASDAQ">--</span></h3><div class="chart-container" id="cc-NASDAQ"></div></div>
-    <div class="chart-card"><h3><span>Dow Jones</span><span class="chart-price" id="cp-DOW">--</span></h3><div class="chart-container" id="cc-DOW"></div></div>
+  <!-- ═══════ PRICE CHARTS ═══════ -->
+  <div class="section open" id="sec-charts">
+    <div class="section-header" onclick="toggleSection('sec-charts')">
+      <h2>Price Charts (14 Instruments)</h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body" style="padding:12px">
+      <div class="section-label">Energy</div>
+      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
+        <div class="chart-card"><h3><span>WTI Crude (WTI)</span><span class="chart-price" id="cp-WTI">--</span></h3><div class="chart-container" id="cc-WTI"></div></div>
+        <div class="chart-card"><h3><span>Natural Gas (NGAS)</span><span class="chart-price" id="cp-NGAS">--</span></h3><div class="chart-container" id="cc-NGAS"></div></div>
+      </div>
+      <div class="section-label" style="margin-top:10px">Metals</div>
+      <div class="charts-row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
+        <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
+        <div class="chart-card"><h3><span>Platinum</span><span class="chart-price" id="cp-PLATINUM">--</span></h3><div class="chart-container" id="cc-PLATINUM"></div></div>
+        <div class="chart-card"><h3><span>Palladium</span><span class="chart-price" id="cp-PALLADIUM">--</span></h3><div class="chart-container" id="cc-PALLADIUM"></div></div>
+        <div class="chart-card"><h3><span>Copper</span><span class="chart-price" id="cp-COPPER">--</span></h3><div class="chart-container" id="cc-COPPER"></div></div>
+      </div>
+      <div class="section-label" style="margin-top:10px">Forex</div>
+      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="chart-card"><h3><span>EUR/USD</span><span class="chart-price" id="cp-EURUSD">--</span></h3><div class="chart-container" id="cc-EURUSD"></div></div>
+        <div class="chart-card"><h3><span>GBP/USD</span><span class="chart-price" id="cp-GBPUSD">--</span></h3><div class="chart-container" id="cc-GBPUSD"></div></div>
+        <div class="chart-card"><h3><span>USD/JPY</span><span class="chart-price" id="cp-USDJPY">--</span></h3><div class="chart-container" id="cc-USDJPY"></div></div>
+      </div>
+      <div class="section-label" style="margin-top:10px">Indices</div>
+      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="chart-card"><h3><span>S&P 500</span><span class="chart-price" id="cp-SP500">--</span></h3><div class="chart-container" id="cc-SP500"></div></div>
+        <div class="chart-card"><h3><span>Nasdaq 100</span><span class="chart-price" id="cp-NASDAQ">--</span></h3><div class="chart-container" id="cc-NASDAQ"></div></div>
+        <div class="chart-card"><h3><span>Dow Jones</span><span class="chart-price" id="cp-DOW">--</span></h3><div class="chart-container" id="cc-DOW"></div></div>
+      </div>
+    </div>
   </div>
 
   <!-- News Sentiment (AI) — dynamically populated -->
   <div class="sentiment-row" id="sentimentRow" style="display:none;grid-template-columns:repeat(auto-fit,minmax(200px,1fr))"></div>
 
-  <!-- Main Grid -->
-  <div class="grid">
-    <!-- Live Prices & Indicators -->
-    <div class="card">
+  <!-- ═══════ LIVE INDICATORS ═══════ -->
+  <div class="section" id="sec-indicators">
+    <div class="section-header" onclick="toggleSection('sec-indicators')">
       <h2>Live Prices & Indicators</h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
       <div class="prices-grid" id="pricesGrid">
         <div class="empty">Waiting for price data...</div>
       </div>
     </div>
-
-    <!-- Open Positions -->
-    <div class="card">
-      <h2>Open Positions <span id="posCount" style="color:var(--accent)"></span></h2>
-      <div id="positions"><div class="empty">No open positions</div></div>
-    </div>
-
-    <!-- Trade History -->
-    <div class="card">
-      <h2>Closed Trades</h2>
-      <div id="closedTrades" style="max-height:400px;overflow-y:auto">
-        <div class="empty">No trades yet</div>
-      </div>
-    </div>
-
-    <!-- Activity Log -->
-    <div class="card">
-      <h2>Activity Log</h2>
-      <div class="log-area" id="logArea">
-        <div class="empty">Waiting for activity...</div>
-      </div>
-    </div>
   </div>
 
-  <!-- ── Analytics Section (Features 10, 11, 12) ── -->
-  <div class="grid" style="margin-bottom:20px">
-    <!-- Performance Attribution -->
-    <div class="card">
-      <h2>Performance Attribution <span id="attrInfo" style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px"></span></h2>
-      <div id="attributionArea" style="max-height:400px;overflow-y:auto">
+  <!-- ═══════ ANALYTICS ═══════ -->
+  <div class="grid">
+    <div class="section open" id="sec-attribution">
+      <div class="section-header" onclick="toggleSection('sec-attribution')">
+        <h2>Performance Attribution <span id="attrInfo" style="color:var(--muted);font-size:11px;font-weight:400;margin-left:6px"></span></h2>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="section-body" style="max-height:400px;overflow-y:auto" id="attributionArea">
         <div class="empty">Waiting for closed trades...</div>
       </div>
     </div>
-    <!-- Drawdown Recovery Tracker -->
-    <div class="card">
-      <h2>Drawdown Recovery</h2>
-      <div id="drawdownArea">
+    <div class="section open" id="sec-drawdown">
+      <div class="section-header" onclick="toggleSection('sec-drawdown')">
+        <h2>Drawdown Recovery</h2>
+        <span class="chevron">▼</span>
+      </div>
+      <div class="section-body" id="drawdownArea">
         <div class="empty">No drawdown data yet</div>
       </div>
     </div>
   </div>
 
-  <!-- Win/Loss Heatmap -->
-  <div class="card" style="margin-bottom:20px">
-    <h2>Win/Loss Heatmap <span style="color:var(--muted);font-size:11px;font-weight:400;margin-left:8px">(Day x Hour P&L)</span></h2>
-    <div id="heatmapArea" style="overflow-x:auto">
+  <!-- ═══════ HEATMAP ═══════ -->
+  <div class="section" id="sec-heatmap">
+    <div class="section-header" onclick="toggleSection('sec-heatmap')">
+      <h2>Win/Loss Heatmap <span style="color:var(--muted);font-size:11px;font-weight:400;margin-left:6px">(Day x Hour P&L)</span></h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body" style="overflow-x:auto" id="heatmapArea">
       <div class="empty">Waiting for closed trades...</div>
     </div>
   </div>
 
-  <!-- Risk Monitor -->
-  <div class="card" style="margin-bottom:20px">
-    <h2>Risk Monitor</h2>
-    <div id="riskMonitor" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
-      <div class="metric"><div class="label">Portfolio Heat</div><div class="value" id="rmHeat">$0</div><div class="sub">Max: 1% of equity</div></div>
-      <div class="metric"><div class="label">Consecutive Losses</div><div class="value" id="rmLosses">0</div><div class="sub" id="rmBreakerSub">Breaker: inactive</div></div>
-      <div class="metric"><div class="label">Vol-Norm Active</div><div class="value" id="rmVolNorm">--</div><div class="sub">ATR vs median check</div></div>
-      <div class="metric"><div class="label">Price Staleness</div><div class="value" id="rmStaleness">OK</div><div class="sub">Max 2min age</div></div>
+  <!-- ═══════ TRADE JOURNAL ═══════ -->
+  <div class="section" id="sec-journal">
+    <div class="section-header" onclick="toggleSection('sec-journal')">
+      <h2>Trade Journal <span id="journalCount" style="color:var(--muted);font-size:11px;font-weight:400;margin-left:6px"></span></h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body" id="journalArea" style="max-height:350px;overflow-y:auto">
+      <div class="empty">Loading signal journal...</div>
+    </div>
+  </div>
+
+  <!-- ═══════ ACTIVITY LOG ═══════ -->
+  <div class="section" id="sec-log">
+    <div class="section-header" onclick="toggleSection('sec-log')">
+      <h2>Activity Log</h2>
+      <span class="chevron">▼</span>
+    </div>
+    <div class="section-body">
+      <div class="log-area" id="logArea">
+        <div class="empty">Waiting for activity...</div>
+      </div>
     </div>
   </div>
 </div>
@@ -420,6 +502,26 @@ const SYMBOL_DECIMALS = {
   'SP500': 2, 'NASDAQ': 2, 'DOW': 2,
 };
 
+// ── Collapsible Sections ──────────────────────────────────────────────────
+function toggleSection(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('open');
+  // Save state to localStorage
+  const state = {};
+  document.querySelectorAll('.section').forEach(s => { state[s.id] = s.classList.contains('open'); });
+  try { localStorage.setItem('sections', JSON.stringify(state)); } catch(e) {}
+}
+function restoreSections() {
+  try {
+    const state = JSON.parse(localStorage.getItem('sections') || '{}');
+    Object.entries(state).forEach(([id, open]) => {
+      const el = document.getElementById(id);
+      if (el) { if (open) el.classList.add('open'); else el.classList.remove('open'); }
+    });
+  } catch(e) {}
+}
+restoreSections();
+
 function updateDashboard(s) {
   // Status + AI badge
   $('#statusBadge').textContent = s.status;
@@ -435,7 +537,7 @@ function updateDashboard(s) {
   const aiBadge = $('#aiBadge');
   if (s.ai_enabled) {
     const aiCalls = s.ai_status ? s.ai_status.calls_last_minute : 0;
-    aiBadge.textContent = `🤖 AI ON (${aiCalls}/25 rpm)`;
+    aiBadge.textContent = `AI ON (${aiCalls}/25 rpm)`;
     aiBadge.className = 'ai-on';
   } else {
     aiBadge.textContent = 'AI OFF';
@@ -451,27 +553,30 @@ function updateDashboard(s) {
   $('#mDailyPnl').className = 'value ' + cls(s.daily_pnl);
   $('#mBuffer').textContent = '$' + fmt(s.buffer_to_floor);
   $('#mBuffer').className = 'value ' + (s.buffer_to_floor < 300 ? 'negative' : s.buffer_to_floor < 600 ? 'warning' : 'positive');
+  $('#mFloorLabel').textContent = 'Floor: $' + fmt(s.hard_floor, 0);
   $('#mTrades').textContent = s.total_trades;
   $('#mWinRate').textContent = 'Win rate: ' + s.win_rate + '%';
   $('#mDrawdown').textContent = '$' + fmt(s.max_drawdown);
   $('#mDrawdown').className = 'value ' + (s.max_drawdown > 500 ? 'negative' : '');
 
   // Floor Gauge
-  const pct = Math.min(100, Math.max(0, ((s.equity - 24000) / 2000) * 100));
+  const floorBase = s.hard_floor || 24000;
+  const pct = Math.min(100, Math.max(0, ((s.equity - floorBase) / 2000) * 100));
   const bar = $('#floorBar');
   bar.style.width = pct + '%';
   bar.textContent = pct.toFixed(0) + '%';
   bar.style.background = pct < 20 ? 'var(--red)' : pct < 40 ? 'var(--orange)' : pct < 60 ? 'var(--yellow)' : 'var(--green)';
-  $('#gaugeLabel').textContent = '$' + fmt(s.equity) + ' / $24,000 floor';
+  $('#gaugeLabel').textContent = '$' + fmt(s.equity) + ' / $' + fmt(floorBase, 0) + ' floor';
+  $('#floorMin').textContent = '$' + fmt(floorBase, 0) + (floorBase > 24000 ? ' (RATCHETED)' : ' (HARD FLOOR)');
 
-  // Prices
+  // Prices & Indicators
   const symbols = Object.keys(SYMBOL_NAMES);
   let pricesHtml = '';
   symbols.forEach(sym => {
     const price = s.prices[sym];
     const ind = s.indicators[sym];
     if (!price) {
-      pricesHtml += `<div class="price-card"><div class="sym">${sym}</div><div class="prc" style="color:var(--muted)">--</div><div class="ind">Loading...</div></div>`;
+      pricesHtml += `<div class="price-card"><div class="sym">${sym}</div><div class="prc" style="color:var(--muted)">--</div></div>`;
       return;
     }
     const trendCls = ind ? 'trend-' + ind.trend : '';
@@ -490,8 +595,8 @@ function updateDashboard(s) {
         <span>ADX: ${ind.adx.toFixed(1)}${ind.adx_rising ? ' ↑' : ''}</span>
         <span style="color:${ind.divergence === 'BULLISH' ? 'var(--green)' : ind.divergence === 'BEARISH' ? 'var(--red)' : 'var(--muted)'}">Div: ${ind.divergence || 'NONE'}</span>
         <span>Vol: ${(ind.volume_ratio || 1).toFixed(1)}x</span>
-        ${(()=>{ const sent = s.news_sentiment && s.news_sentiment[sym]; if (sent && sent.score !== undefined) { const sc = sent.score; const col = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; return `<br><span style="color:${col}">📰 Sentiment: ${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span>`; } return ''; })()}
-        ${(()=>{ const h = s.htf_indicators && s.htf_indicators[sym]; if (!h) return ''; const t = h.trend || 'NEUTRAL'; const r = h.rsi || 50; const arrow = t.includes('BULLISH') ? '▲' : t.includes('BEARISH') ? '▼' : '—'; const cls = t.includes('BULLISH') ? 'htf-bullish' : t.includes('BEARISH') ? 'htf-bearish' : 'htf-neutral'; return `<br><span class="htf-badge ${cls}">1H: ${arrow} ${t} | RSI ${r.toFixed(1)}</span>`; })()}
+        ${(()=>{ const sent = s.news_sentiment && s.news_sentiment[sym]; if (sent && sent.score !== undefined) { const sc = sent.score; const col = sc > 0.2 ? 'var(--green)' : sc < -0.2 ? 'var(--red)' : 'var(--muted)'; return `<br><span style="color:${col}">Sentiment: ${sc > 0 ? '+' : ''}${sc.toFixed(2)}</span>`; } return ''; })()}
+        ${(()=>{ const h = s.htf_indicators && s.htf_indicators[sym]; if (!h) return ''; const t = h.trend || 'NEUTRAL'; const r = h.rsi || 50; const arrow = t.includes('BULLISH') ? '▲' : t.includes('BEARISH') ? '▼' : '—'; const c = t.includes('BULLISH') ? 'htf-bullish' : t.includes('BEARISH') ? 'htf-bearish' : 'htf-neutral'; return `<br><span class="htf-badge ${c}">1H: ${arrow} ${t} | RSI ${r.toFixed(1)}</span>`; })()}
       </div>` : ''}
     </div>`;
   });
@@ -520,7 +625,7 @@ function updateDashboard(s) {
           <strong>Unrealized P&L:</strong> <span class="${cls(p.unrealized_pnl)}">${signUsd(p.unrealized_pnl)}</span>
         </div>
         <div class="pos-reason">${(s.ai_explanations && s.ai_explanations[p.id]) || p.reason}</div>
-        ${p.ai_confidence ? `<span class="ai-badge">🤖 AI ${p.ai_confidence}%</span>` : ''}
+        ${p.ai_confidence ? `<span class="ai-badge">AI ${p.ai_confidence}%</span>` : ''}
       </div>`;
     });
     $('#positions').innerHTML = posHtml;
@@ -534,7 +639,7 @@ function updateDashboard(s) {
     [...s.closed_trades].reverse().forEach(t => {
       html += `<div class="trade-entry">
         <div class="trade-header">
-          <span><span class="side side-${t.side}" style="font-size:10px;padding:1px 6px">${t.side}</span> ${SYMBOL_NAMES[t.symbol]}</span>
+          <span><span class="side side-${t.side}" style="font-size:10px;padding:1px 6px">${t.side}</span> ${SYMBOL_NAMES[t.symbol] || t.symbol}</span>
           <span class="trade-pnl ${cls(t.pnl)}">${signUsd(t.pnl)}</span>
         </div>
         <div class="trade-reasons">
@@ -669,6 +774,32 @@ function updateDashboard(s) {
     const breaker = s.loss_breaker_until > 0 ? new Date(s.loss_breaker_until * 1000) : null;
     $('#rmBreakerSub').textContent = breaker && breaker > new Date() ? `Breaker until ${breaker.toLocaleTimeString()}` : 'Breaker: inactive';
   }
+  // Vol-Norm status
+  if (s.vol_norm_count !== undefined) {
+    const vn = $('#rmVolNorm');
+    vn.textContent = s.vol_norm_count > 0 ? `${s.vol_norm_count} syms` : 'OFF';
+    vn.className = 'value ' + (s.vol_norm_count > 0 ? 'warning' : 'positive');
+  }
+  // Drawdown quick stat
+  if (s.drawdown_recovery) {
+    const dd = s.drawdown_recovery;
+    const ddEl = $('#rmDrawdown');
+    if (dd.in_drawdown) {
+      ddEl.textContent = `${dd.recovery_pct.toFixed(0)}%`;
+      ddEl.className = 'value ' + (dd.recovery_pct > 60 ? 'warning' : 'negative');
+      $('#rmDrawdownSub').textContent = `$${fmt(dd.current_dd)} from peak`;
+    } else {
+      ddEl.textContent = 'None';
+      ddEl.className = 'value positive';
+      $('#rmDrawdownSub').textContent = 'No active drawdown';
+    }
+  }
+  // Daily loss
+  const dlEl = $('#rmDailyLoss');
+  if (dlEl) {
+    dlEl.textContent = signUsd(s.daily_pnl);
+    dlEl.className = 'value ' + (s.daily_pnl <= -400 ? 'negative' : s.daily_pnl <= -200 ? 'warning' : cls(s.daily_pnl));
+  }
 }
 
 let _lastState = null;
@@ -702,13 +833,11 @@ function updateCharts(s) {
     const history = (s.price_history && s.price_history[sym]) || [];
     const price = s.prices && s.prices[sym];
 
-    // Update header price
     const cpEl = document.getElementById('cp-' + sym);
     if (cpEl && price) cpEl.textContent = '$' + fmt(price, SYMBOL_DECIMALS[sym] || 2);
 
     if (!history.length) return;
 
-    // Convert to chart data, deduplicate by time
     const seen = new Set();
     const data = [];
     history.forEach(p => {
@@ -720,11 +849,9 @@ function updateCharts(s) {
 
     ch.priceSeries.setData(data);
 
-    // Remove old price lines
     ch.priceLines.forEach(pl => { try { ch.priceSeries.removePriceLine(pl); } catch(e) {} });
     ch.priceLines = [];
 
-    // Indicator overlay lines
     const ind = s.indicators && s.indicators[sym];
     if (ind) {
       ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.sma_10, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: 'SMA10' }));
@@ -733,19 +860,16 @@ function updateCharts(s) {
       ch.priceLines.push(ch.priceSeries.createPriceLine({ price: ind.bb_lower, color: 'rgba(100,116,139,0.4)', lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: 'BB-' }));
     }
 
-    // SL / TP / Entry lines for open positions
     (s.open_positions || []).filter(p => p.symbol === sym).forEach(pos => {
       ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.stop_loss, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'SL' }));
       ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.take_profit, color: '#22c55e', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'TP' }));
       ch.priceLines.push(ch.priceSeries.createPriceLine({ price: pos.entry_price, color: '#3b82f6', lineWidth: 1, lineStyle: 3, axisLabelVisible: true, title: 'Entry' }));
     });
 
-    // Build markers for entries and exits
     const minT = data[0].time;
     const maxT = data[data.length - 1].time;
     const markers = [];
 
-    // Open position entry markers
     (s.open_positions || []).filter(p => p.symbol === sym).forEach(pos => {
       const t = Math.floor(new Date(pos.opened_at).getTime() / 1000);
       markers.push({
@@ -757,34 +881,18 @@ function updateCharts(s) {
       });
     });
 
-    // Closed trade entry + exit markers
     (s.closed_trades || []).filter(tr => tr.symbol === sym).forEach(tr => {
       const tOpen = Math.floor(new Date(tr.opened_at).getTime() / 1000);
       if (tOpen >= minT && tOpen <= maxT) {
-        markers.push({
-          time: tOpen,
-          position: tr.side === 'BUY' ? 'belowBar' : 'aboveBar',
-          color: tr.side === 'BUY' ? '#22c55e' : '#ef4444',
-          shape: tr.side === 'BUY' ? 'arrowUp' : 'arrowDown',
-          text: tr.side,
-        });
+        markers.push({ time: tOpen, position: tr.side === 'BUY' ? 'belowBar' : 'aboveBar', color: tr.side === 'BUY' ? '#22c55e' : '#ef4444', shape: tr.side === 'BUY' ? 'arrowUp' : 'arrowDown', text: tr.side });
       }
       const tClose = Math.floor(new Date(tr.closed_at).getTime() / 1000);
       if (tClose >= minT && tClose <= maxT) {
-        markers.push({
-          time: tClose,
-          position: 'inBar',
-          color: tr.pnl >= 0 ? '#22c55e' : '#ef4444',
-          shape: 'circle',
-          text: (tr.pnl >= 0 ? '+' : '') + '$' + tr.pnl.toFixed(2),
-        });
+        markers.push({ time: tClose, position: 'inBar', color: tr.pnl >= 0 ? '#22c55e' : '#ef4444', shape: 'circle', text: (tr.pnl >= 0 ? '+' : '') + '$' + tr.pnl.toFixed(2) });
       }
     });
 
-    // Markers must be sorted by time, deduplicate same-time same-shape
     markers.sort((a, b) => a.time - b.time || a.position.localeCompare(b.position));
-
-    // Snap marker times to nearest data point time (required by Lightweight Charts)
     const dataTimes = data.map(d => d.time);
     markers.forEach(m => {
       let best = dataTimes[0];
@@ -819,7 +927,6 @@ function initEquityChart() {
     lineColor: '#22c55e',
     lineWidth: 2,
   });
-  // Add floor line
   equitySeries.createPriceLine({ price: 24000, color: '#ef4444', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'Floor' });
 }
 
@@ -838,7 +945,7 @@ function updateEquityChart(s) {
   }
   const info = document.getElementById('ecInfo');
   if (info) {
-    const curveTrading = s.equity_curve_active ? ' | ⚠ Equity Curve: SIZE HALVED' : '';
+    const curveTrading = s.equity_curve_active ? ' | Equity Curve: SIZE HALVED' : '';
     info.textContent = `${s.closed_trades.length} trades${curveTrading}`;
     if (s.equity_curve_active) info.style.color = 'var(--yellow)';
     else info.style.color = 'var(--accent)';
@@ -848,7 +955,6 @@ function updateEquityChart(s) {
 initEquityChart();
 
 // ── Trade Journal ───────────────────────────────────────────────────────
-let journalLoaded = false;
 async function loadJournal() {
   try {
     const res = await fetch('/api/journal?limit=50');
@@ -856,22 +962,32 @@ async function loadJournal() {
     const area = document.getElementById('journalArea');
     if (!data.signals || data.signals.length === 0) {
       area.innerHTML = '<div class="empty">No signals recorded yet</div>';
+      $('#journalCount').textContent = '';
       return;
     }
+    // Filter: only show EXECUTED and BLOCKED signals (skip NO_SIGNAL noise)
+    const filtered = data.signals.filter(s => s.action && s.action !== 'NO_SIGNAL');
+    if (filtered.length === 0) {
+      area.innerHTML = '<div class="empty">No actionable signals yet (only scans so far)</div>';
+      $('#journalCount').textContent = `(${data.count} scans)`;
+      return;
+    }
+    $('#journalCount').textContent = `(${filtered.length} signals)`;
     let html = '';
-    data.signals.forEach(s => {
+    filtered.forEach(s => {
       const time = s.timestamp ? s.timestamp.split('T')[1].split('.')[0] : '--';
-      const actionColor = s.action === 'EXECUTED' ? 'var(--green)' : s.action === 'NO_SIGNAL' ? 'var(--muted)' : 'var(--yellow)';
+      const isExec = s.action === 'EXECUTED';
       const sideStr = s.side ? `<span class="side side-${s.side}" style="font-size:9px;padding:1px 4px">${s.side}</span>` : '';
       const strength = s.strength ? ` str=${s.strength.toFixed(1)}` : '';
-      html += `<div style="padding:3px 0;border-bottom:1px solid rgba(30,41,59,0.5)">
-        <span style="color:var(--muted)">${time}</span>
-        <span style="color:var(--accent)">${s.symbol}</span> ${sideStr}
-        <span style="color:${actionColor};font-weight:600">${s.action}</span>${strength}
+      const price = s.price ? ` @ $${s.price.toFixed(2)}` : '';
+      html += `<div class="journal-entry">
+        <span class="j-time">${time}</span>
+        <span class="j-sym">${s.symbol}</span> ${sideStr}
+        <span class="${isExec ? 'j-exec' : 'j-block'}">${s.action}</span>${strength}${price}
         ${s.adx ? ` <span style="color:var(--muted)">ADX=${s.adx.toFixed(1)}</span>` : ''}
         ${s.rsi ? ` <span style="color:var(--muted)">RSI=${s.rsi.toFixed(1)}</span>` : ''}
         <span style="color:var(--muted)">[${s.session_name || '?'}]</span>
-        ${s.reasons ? `<div style="color:var(--muted);font-size:10px;padding-left:16px">${s.reasons}</div>` : ''}
+        ${s.reasons ? `<div class="j-reasons">${s.reasons}</div>` : ''}
       </div>`;
     });
     area.innerHTML = html;
@@ -909,9 +1025,9 @@ poll();
 loadJournal();
 </script>
 
-<div style="text-align:center;padding:24px 0 16px;color:var(--muted);font-size:12px;border-top:1px solid var(--border);margin-top:24px">
-  Made with ❤️ by <a href="https://github.com/FarisElshammouty" target="_blank" style="color:var(--accent);text-decoration:none">Faris</a>
-  &nbsp;·&nbsp; {{ version }}
+<div style="text-align:center;padding:20px 0 14px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);margin-top:20px">
+  Made with &#10084; by <a href="https://github.com/FarisElshammouty" target="_blank" style="color:var(--accent);text-decoration:none">Faris</a>
+  &nbsp;&middot;&nbsp; {{ version }}
 </div>
 </body>
 </html>

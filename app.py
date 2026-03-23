@@ -14,7 +14,7 @@ import backtest as bt
 
 app = Flask(__name__)
 
-VERSION = "v3.2"
+VERSION = "v3.3"
 engine = TradingEngine()
 _engine_started = False
 _start_lock = threading.Lock()
