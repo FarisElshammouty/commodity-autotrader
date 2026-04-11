@@ -375,34 +375,28 @@
   <!-- ═══════ PRICE CHARTS ═══════ -->
   <div class="section open" id="sec-charts">
     <div class="section-header" onclick="toggleSection('sec-charts')">
-      <h2>Price Charts (14 Instruments)</h2>
+      <h2>Price Charts (8 Instruments)</h2>
       <span class="chevron">▼</span>
     </div>
     <div class="section-body" style="padding:12px">
-      <div class="section-label">Energy</div>
-      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="section-label">Oil</div>
+      <div class="charts-row" style="grid-template-columns:repeat(1,1fr);max-width:33%">
         <div class="chart-card"><h3><span>Brent Crude (BRENT)</span><span class="chart-price" id="cp-BRENT">--</span></h3><div class="chart-container" id="cc-BRENT"></div></div>
-        <div class="chart-card"><h3><span>WTI Crude (WTI)</span><span class="chart-price" id="cp-WTI">--</span></h3><div class="chart-container" id="cc-WTI"></div></div>
-        <div class="chart-card"><h3><span>Natural Gas (NGAS)</span><span class="chart-price" id="cp-NGAS">--</span></h3><div class="chart-container" id="cc-NGAS"></div></div>
       </div>
       <div class="section-label" style="margin-top:10px">Metals</div>
-      <div class="charts-row" style="grid-template-columns:repeat(5,1fr)">
+      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
         <div class="chart-card"><h3><span>Gold (XAUUSD)</span><span class="chart-price" id="cp-XAUUSD">--</span></h3><div class="chart-container" id="cc-XAUUSD"></div></div>
-        <div class="chart-card"><h3><span>Silver (XAGUSD)</span><span class="chart-price" id="cp-XAGUSD">--</span></h3><div class="chart-container" id="cc-XAGUSD"></div></div>
         <div class="chart-card"><h3><span>Platinum</span><span class="chart-price" id="cp-PLATINUM">--</span></h3><div class="chart-container" id="cc-PLATINUM"></div></div>
-        <div class="chart-card"><h3><span>Palladium</span><span class="chart-price" id="cp-PALLADIUM">--</span></h3><div class="chart-container" id="cc-PALLADIUM"></div></div>
         <div class="chart-card"><h3><span>Copper</span><span class="chart-price" id="cp-COPPER">--</span></h3><div class="chart-container" id="cc-COPPER"></div></div>
       </div>
       <div class="section-label" style="margin-top:10px">Forex</div>
-      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="charts-row" style="grid-template-columns:repeat(2,1fr)">
         <div class="chart-card"><h3><span>EUR/USD</span><span class="chart-price" id="cp-EURUSD">--</span></h3><div class="chart-container" id="cc-EURUSD"></div></div>
-        <div class="chart-card"><h3><span>GBP/USD</span><span class="chart-price" id="cp-GBPUSD">--</span></h3><div class="chart-container" id="cc-GBPUSD"></div></div>
         <div class="chart-card"><h3><span>USD/JPY</span><span class="chart-price" id="cp-USDJPY">--</span></h3><div class="chart-container" id="cc-USDJPY"></div></div>
       </div>
       <div class="section-label" style="margin-top:10px">Indices</div>
-      <div class="charts-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="charts-row" style="grid-template-columns:repeat(2,1fr)">
         <div class="chart-card"><h3><span>S&P 500</span><span class="chart-price" id="cp-SP500">--</span></h3><div class="chart-container" id="cc-SP500"></div></div>
-        <div class="chart-card"><h3><span>Nasdaq 100</span><span class="chart-price" id="cp-NASDAQ">--</span></h3><div class="chart-container" id="cc-NASDAQ"></div></div>
         <div class="chart-card"><h3><span>Dow Jones</span><span class="chart-price" id="cp-DOW">--</span></h3><div class="chart-container" id="cc-DOW"></div></div>
       </div>
     </div>
@@ -490,16 +484,16 @@ const signUsd = n => (n >= 0 ? '+' : '-') + '$' + fmt(Math.abs(n));
 const cls = n => n >= 0 ? 'positive' : 'negative';
 
 const SYMBOL_NAMES = {
-  'BRENT': 'Brent Crude', 'WTI': 'WTI Crude', 'NGAS': 'Natural Gas',
-  'XAUUSD': 'Gold', 'XAGUSD': 'Silver', 'PLATINUM': 'Platinum', 'PALLADIUM': 'Palladium', 'COPPER': 'Copper',
-  'EURUSD': 'EUR/USD', 'GBPUSD': 'GBP/USD', 'USDJPY': 'USD/JPY',
-  'SP500': 'S&P 500', 'NASDAQ': 'Nasdaq 100', 'DOW': 'Dow Jones',
+  'BRENT': 'Brent Crude',
+  'XAUUSD': 'Gold', 'PLATINUM': 'Platinum', 'COPPER': 'Copper',
+  'EURUSD': 'EUR/USD', 'USDJPY': 'USD/JPY',
+  'SP500': 'S&P 500', 'DOW': 'Dow Jones',
 };
 const SYMBOL_DECIMALS = {
-  'XAUUSD': 2, 'XAGUSD': 3, 'BRENT': 2, 'WTI': 2, 'NGAS': 3,
-  'PLATINUM': 2, 'PALLADIUM': 2, 'COPPER': 4,
-  'EURUSD': 5, 'GBPUSD': 5, 'USDJPY': 3,
-  'SP500': 2, 'NASDAQ': 2, 'DOW': 2,
+  'XAUUSD': 2, 'BRENT': 2,
+  'PLATINUM': 2, 'COPPER': 4,
+  'EURUSD': 5, 'USDJPY': 3,
+  'SP500': 2, 'DOW': 2,
 };
 
 // ── Collapsible Sections ──────────────────────────────────────────────────
