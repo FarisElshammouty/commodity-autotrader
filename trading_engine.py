@@ -31,51 +31,42 @@ import db
 # ── Symbol Mapping ──────────────────────────────────────────────────────────
 # asset_class determines session multipliers and correlation grouping
 SYMBOLS = {
-    # ── Energy ──
+    # ── Oil ──  (kept BRENT only — WTI was -$254, 31% WR)
     "BRENT":    {"yf": "BZ=F",      "name": "Brent Crude Oil",     "pip_value": 0.01,  "lot_size": 10,  "asset_class": "oil"},
-    "WTI":      {"yf": "CL=F",      "name": "WTI Crude Oil",       "pip_value": 0.01,  "lot_size": 10,  "asset_class": "oil"},
-    "NGAS":     {"yf": "NG=F",      "name": "Natural Gas",         "pip_value": 0.001, "lot_size": 100, "asset_class": "energy"},
-    # ── Metals ──
+    # ── Metals ──  (cut XAGUSD -$261, PALLADIUM -$77)
     "XAUUSD":   {"yf": "GC=F",      "name": "Gold (XAU/USD)",      "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
-    "XAGUSD":   {"yf": "SI=F",      "name": "Silver (XAG/USD)",    "pip_value": 0.001, "lot_size": 50,  "asset_class": "metals"},
     "PLATINUM": {"yf": "PL=F",      "name": "Platinum",            "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
-    "PALLADIUM":{"yf": "PA=F",      "name": "Palladium",           "pip_value": 0.01,  "lot_size": 1,   "asset_class": "metals"},
     "COPPER":   {"yf": "HG=F",      "name": "Copper",              "pip_value": 0.0001,"lot_size": 100, "asset_class": "metals"},
-    # ── Forex ──
+    # ── Forex ──  (cut GBPUSD 35% WR, -$39)
     "EURUSD":   {"yf": "EURUSD=X",  "name": "EUR/USD",             "pip_value": 0.0001,"lot_size": 1000,"asset_class": "forex"},
-    "GBPUSD":   {"yf": "GBPUSD=X",  "name": "GBP/USD",             "pip_value": 0.0001,"lot_size": 1000,"asset_class": "forex"},
     "USDJPY":   {"yf": "USDJPY=X",  "name": "USD/JPY",             "pip_value": 0.01,  "lot_size": 1000,"asset_class": "forex", "pnl_ccy": "JPY"},
-    # ── Indices ──
+    # ── Indices ──  (cut NASDAQ -$225; kept SP500 +$62 and DOW for high WR)
     "SP500":    {"yf": "ES=F",      "name": "S&P 500 Futures",     "pip_value": 0.25,  "lot_size": 1,   "asset_class": "indices"},
-    "NASDAQ":   {"yf": "NQ=F",      "name": "Nasdaq 100 Futures",  "pip_value": 0.25,  "lot_size": 1,   "asset_class": "indices"},
     "DOW":      {"yf": "YM=F",      "name": "Dow Jones Futures",   "pip_value": 1.0,   "lot_size": 1,   "asset_class": "indices"},
 }
 
 # ── Configuration ───────────────────────────────────────────────────────────
 STARTING_BALANCE = 25000.0
 HARD_FLOOR = 24000.0
-MAX_RISK_PER_TRADE_PCT = 0.15      # 0.15% per trade — slightly more conservative with more symbols
-MAX_OPEN_POSITIONS = 6             # allow more positions across 15 instruments
+MAX_RISK_PER_TRADE_PCT = 0.20      # 0.20% per trade — slightly larger since fewer, higher-quality trades
+MAX_OPEN_POSITIONS = 4             # reduced from 6 — focus on fewer, better positions
 MAX_POSITIONS_PER_SYMBOL = 1
 PRICE_FETCH_INTERVAL = 15          # seconds between price updates
-STRATEGY_INTERVAL = 20             # seconds between strategy evaluations
-MAX_DAILY_LOSS = 600.0             # stop trading if daily loss exceeds this
-RISK_REWARD_RATIO = 1.5            # 1.5:1 R:R — closer TP means more trades actually hit it
-SIGNAL_THRESHOLD = 2.0             # minimum composite score to enter a trade
-ATR_STOP_MULT = 2.0               # stop loss distance = 2x ATR (wider = less noise stopouts)
-ATR_TRAIL_TRIGGER = 2.0           # only start trailing after price moves 2x ATR in our favour
-ATR_TRAIL_DIST = 1.2              # trail follows at 1.2x ATR behind price
-LOSS_COOLDOWN_SEC = 300            # 5 min cooldown per symbol after a losing trade
+STRATEGY_INTERVAL = 60             # seconds between strategy evaluations (was 20 — less churning)
+MAX_DAILY_LOSS = 400.0             # tighter daily loss cap (was 600)
+RISK_REWARD_RATIO = 1.5            # 1.5:1 R:R with wider stops = larger TP targets
+SIGNAL_THRESHOLD = 3.0             # minimum composite score (was 2.0 — require strong conviction)
+ATR_STOP_MULT = 3.0               # stop loss distance = 3x ATR (was 2x — give room to breathe)
+ATR_TRAIL_TRIGGER = 2.5           # start trailing after 2.5x ATR move (was 2.0)
+ATR_TRAIL_DIST = 1.5              # trail at 1.5x ATR behind price (was 1.2 — wider trail)
+LOSS_COOLDOWN_SEC = 600            # 10 min cooldown per symbol after a losing trade (was 5 min)
+TRADE_COOLDOWN_SEC = 1800          # 30 min cooldown per symbol after ANY trade (win or lose)
 MAX_POSITIONS_PER_CLASS = 2        # max 2 positions in same asset class at once
 
 # ── Correlation Groups ─────────────────────────────────────────────────────
 # Block same-direction trades on highly correlated pairs
 CORRELATED_PAIRS = [
-    {"BRENT", "WTI"},           # crude oil grades move together
-    {"XAUUSD", "XAGUSD"},      # precious metals correlate strongly
-    {"PLATINUM", "PALLADIUM"},  # PGMs correlate
-    {"EURUSD", "GBPUSD"},      # both are anti-USD, move together
-    {"SP500", "NASDAQ"},        # US equity indices move together
+    {"XAUUSD", "PLATINUM"},     # precious metals correlate
     {"SP500", "DOW"},           # US equity indices move together
 ]
 
@@ -210,6 +201,7 @@ class TradingEngine:
 
         self._save_counter = 0  # for periodic state saves
         self._loss_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after losses
+        self._trade_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after ANY trade
         self._recent_trades_pnl: deque = deque(maxlen=20)  # rolling 20-trade P&L for equity curve trading
         self._consecutive_losses: int = 0           # consecutive loss breaker
         self._loss_breaker_until: float = 0         # timestamp when breaker expires
@@ -1014,7 +1006,13 @@ class TradingEngine:
         if buffer < 200:
             return False, "Too close to hard floor, pausing new trades"
 
-        # Loss cooldown: don't re-enter a symbol too soon after a loss
+        # Trade cooldown: don't re-enter a symbol too soon after ANY trade
+        trade_cd = self._trade_cooldowns.get(symbol, 0)
+        if time.time() < trade_cd:
+            remaining = int(trade_cd - time.time())
+            return False, f"Trade cooldown: {remaining}s remaining for {symbol}"
+
+        # Loss cooldown: extra cooldown after a losing trade
         cooldown_until = self._loss_cooldowns.get(symbol, 0)
         if time.time() < cooldown_until:
             remaining = int(cooldown_until - time.time())
@@ -1300,54 +1298,51 @@ class TradingEngine:
         total = (trend_score + mr_score + mom_score + macd_score + sentiment_score
                  + htf_score + session_boost + div_score + breakout_score) * volume_filter
 
+        # ─── ADX Regime Filter (applied before signal decision) ────
+        adx = ind.get("adx", 25)
+        if adx < 18:
+            # Very choppy market — don't trade at all (was 20, only blocking weak MR)
+            return None
+        elif adx < 22:
+            reasons.append(f"ADX={adx:.1f} (ranging) — mean-reversion only")
+            # In ranging markets, only allow if strong mean-reversion
+            if abs(mr_score) < 1.5:
+                return None
+        elif adx > 25:
+            reasons.append(f"ADX={adx:.1f} (trending) — trend-following mode")
+        else:
+            reasons.append(f"ADX={adx:.1f} (transitional)")
+
+        # ─── HTF MANDATORY alignment (not just a filter) ──────────
+        # This is the #1 change: REQUIRE the 1H trend to agree with our direction
+        htf = self.htf_indicators.get(symbol)
+        if not htf:
+            return None  # no HTF data = no trade
+        htf_trend = htf.get("trend", "NEUTRAL")
+        htf_rsi = htf.get("rsi", 50)
+
+        # Determine if HTF supports a BUY or SELL
+        htf_bullish = htf_trend in ("BULLISH", "LEAN_BULLISH")
+        htf_bearish = htf_trend in ("BEARISH", "LEAN_BEARISH")
+
         # Adaptive signal threshold per symbol
         threshold = self._get_symbol_param(symbol, "signal_threshold", SIGNAL_THRESHOLD)
 
         # Standard composite: need strong agreement from multiple factors
         if total >= threshold:
+            if not htf_bullish:
+                return None  # signal says BUY but HTF doesn't agree
             signal = {"side": Side.BUY, "strength": total, "reasons": reasons}
         elif total <= -threshold:
+            if not htf_bearish:
+                return None  # signal says SELL but HTF doesn't agree
             signal = {"side": Side.SELL, "strength": abs(total), "reasons": reasons}
-        # Strong mean-reversion alone (extreme conditions only)
-        elif abs(mr_score) >= 1.5 and abs(total) >= 1.0:
-            side = Side.BUY if mr_score > 0 else Side.SELL
-            signal = {"side": side, "strength": abs(mr_score), "reasons": reasons}
-        # Strong trend + MACD + at least one other factor
-        elif abs(trend_score) >= 1 and abs(macd_score) >= 0.5 and (trend_score * macd_score > 0) and abs(total) >= 1.5:
-            side = Side.BUY if trend_score > 0 else Side.SELL
-            reasons.append("Trend + MACD aligned")
-            signal = {"side": side, "strength": abs(trend_score + macd_score), "reasons": reasons}
         else:
             return None
+        # NOTE: removed the weak "shortcut" entries (MR-alone and Trend+MACD-alone)
+        # Those were letting in low-conviction trades that bled money
 
-        # ─── ADX Regime Filter ─────────────────────────────────────
-        adx = ind.get("adx", 25)
-        if adx < 20:
-            # Choppy/ranging market — only allow mean-reversion signals
-            if abs(mr_score) < 1.0:
-                reasons.append(f"BLOCKED by ADX regime: ADX={adx:.1f} (ranging), no strong MR signal")
-                return None
-            reasons.append(f"ADX={adx:.1f} (ranging) — mean-reversion mode")
-        elif adx > 25:
-            # Trending market — only allow trend-following signals
-            if abs(trend_score) < 0.5:
-                reasons.append(f"BLOCKED by ADX regime: ADX={adx:.1f} (trending), no trend signal")
-                return None
-            reasons.append(f"ADX={adx:.1f} (trending) — trend-following mode")
-        else:
-            reasons.append(f"ADX={adx:.1f} (transitional)")
-
-        # ─── HTF Hard Filter: block trades against strong HTF trend ──
-        if htf:
-            htf_trend = htf.get("trend", "NEUTRAL")
-            htf_rsi = htf.get("rsi", 50)
-            if signal["side"] == Side.BUY and htf_trend == "BEARISH" and htf_rsi > 60:
-                reasons.append(f"BLOCKED by HTF(1h): strong bearish trend (RSI={htf_rsi:.1f})")
-                return None
-            if signal["side"] == Side.SELL and htf_trend == "BULLISH" and htf_rsi < 40:
-                reasons.append(f"BLOCKED by HTF(1h): strong bullish trend (RSI={htf_rsi:.1f})")
-                return None
-
+        reasons.append(f"HTF(1h) confirms: {htf_trend}, RSI={htf_rsi:.1f}")
         return signal
 
     def _execute_signal(self, symbol: str, signal: dict, ind: dict, price: float, ai_result: dict = None):
@@ -1608,6 +1603,8 @@ class TradingEngine:
             self.balance += pnl
             self.daily_pnl += pnl
             self._recent_trades_pnl.append(pnl)  # equity curve tracking
+            # Universal trade cooldown: 30 min per symbol after ANY trade
+            self._trade_cooldowns[pos.symbol] = time.time() + TRADE_COOLDOWN_SEC
             if pnl > 0:
                 self.winning_trades += 1
                 self._consecutive_losses = 0  # reset streak on win

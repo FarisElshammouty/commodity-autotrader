@@ -14,7 +14,7 @@ import backtest as bt
 
 app = Flask(__name__)
 
-VERSION = "v3.4"
+VERSION = "v4.0"
 engine = TradingEngine()
 _engine_started = False
 _start_lock = threading.Lock()
@@ -157,6 +157,8 @@ def api_reset():
     engine._consecutive_losses = 0
     engine._loss_breaker_until = 0
     engine._recent_trades_pnl.clear()
+    engine._trade_cooldowns.clear()
+    engine._loss_cooldowns.clear()
     # Wipe database
     db.reset_db()
     engine._log("Engine reset to fresh $25,000 start", level="INFO")
