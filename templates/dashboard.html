@@ -258,6 +258,54 @@
     font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase;
     letter-spacing: 1px; margin-bottom: 6px; margin-top: 4px;
   }
+
+  /* ── Live Pulse Dot ──────────────────────────────── */
+  .pulse-dot {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--green); margin-right: 6px; vertical-align: middle;
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  .pulse-dot.error { background: var(--red); }
+  .pulse-dot.stale { background: var(--yellow); animation: none; }
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0.4); }
+    50% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+  }
+
+  /* ── Price Flash ──────────────────────────────────── */
+  .flash-up { animation: flash-green 0.6s ease; }
+  .flash-down { animation: flash-red 0.6s ease; }
+  @keyframes flash-green { 0% { background: rgba(34,197,94,0.25); } 100% { background: transparent; } }
+  @keyframes flash-red { 0% { background: rgba(239,68,68,0.25); } 100% { background: transparent; } }
+
+  /* ── Strategy Info Bar ───────────────────────────── */
+  .strategy-bar {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 8px 14px; margin-bottom: 16px;
+    background: rgba(59,130,246,0.06); border: 1px solid rgba(59,130,246,0.15);
+    border-radius: 10px; font-size: 11px; color: var(--muted);
+  }
+  .strategy-bar .strat-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 6px;
+    background: rgba(30,41,59,0.8); border: 1px solid var(--border);
+    font-size: 10px; white-space: nowrap;
+  }
+  .strategy-bar .strat-chip .strat-val { color: var(--text); font-weight: 600; }
+  .strategy-bar .strat-label {
+    font-size: 10px; font-weight: 700; color: var(--accent);
+    text-transform: uppercase; letter-spacing: 1px; margin-right: 4px;
+  }
+
+  /* ── Position Age ────────────────────────────────── */
+  .pos-age { font-size: 10px; color: var(--muted); margin-top: 4px; }
+  .pos-age .age-val { color: var(--text); font-weight: 600; }
+
+  /* ── Last Updated ────────────────────────────────── */
+  .last-updated { font-size: 10px; color: var(--muted); }
+
+  /* ── Metric value transition ─────────────────────── */
+  .metric .value { transition: color 0.3s ease; }
 </style>
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -265,19 +313,33 @@
 
 <div class="header">
   <div style="display:flex;align-items:center;gap:12px">
-    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">14 Instruments</small></h1>
+    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">8 Instruments</small></h1>
     <span style="background:rgba(59,130,246,0.15);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid rgba(59,130,246,0.3)">{{ version }}</span>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <a href="/backtest" style="color:var(--muted);font-size:11px;text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:6px;transition:color 0.2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">Backtest</a>
     <span id="sessionBadge" class="session-badge session-ASIAN">Session: ...</span>
     <span id="aiBadge" class="ai-off">AI OFF</span>
+    <span class="pulse-dot" id="pulseDot"></span>
     <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
+    <span class="last-updated" id="lastUpdated"></span>
     <span style="color:var(--muted);font-size:11px;margin-left:4px" id="clock"></span>
   </div>
 </div>
 
 <div class="container">
+  <!-- Strategy Info Bar -->
+  <div class="strategy-bar">
+    <span class="strat-label">Strategy v4.0</span>
+    <span class="strat-chip">Signal Threshold <span class="strat-val">3.0</span></span>
+    <span class="strat-chip">ATR Stop <span class="strat-val">3x</span></span>
+    <span class="strat-chip">R:R <span class="strat-val">1.5:1</span></span>
+    <span class="strat-chip">Max Positions <span class="strat-val">4</span></span>
+    <span class="strat-chip">Trade Cooldown <span class="strat-val">30min</span></span>
+    <span class="strat-chip">HTF Filter <span class="strat-val" style="color:var(--green)">Mandatory</span></span>
+    <span class="strat-chip">Scan Interval <span class="strat-val">60s</span></span>
+  </div>
+
   <!-- Metrics -->
   <div class="metrics">
     <div class="metric">
@@ -288,6 +350,11 @@
       <div class="label">Equity</div>
       <div class="value" id="mEquity">$25,000.00</div>
       <div class="sub" id="mUnrealized">Unrealized: $0.00</div>
+    </div>
+    <div class="metric">
+      <div class="label">Total P&L</div>
+      <div class="value" id="mTotalPnl">$0.00</div>
+      <div class="sub" id="mTotalPnlPct">0.00%</div>
     </div>
     <div class="metric">
       <div class="label">Daily P&L</div>
@@ -349,7 +416,7 @@
         <div class="risk-item"><div class="label">Vol-Norm Active</div><div class="value" id="rmVolNorm">--</div><div class="sub">ATR vs median check</div></div>
         <div class="risk-item"><div class="label">Price Staleness</div><div class="value" id="rmStaleness">OK</div><div class="sub">Max 2min age</div></div>
         <div class="risk-item"><div class="label">Drawdown</div><div class="value" id="rmDrawdown">--</div><div class="sub" id="rmDrawdownSub">Recovery progress</div></div>
-        <div class="risk-item"><div class="label">Daily Loss Cap</div><div class="value" id="rmDailyLoss">$0</div><div class="sub">Max: $600/day</div></div>
+        <div class="risk-item"><div class="label">Daily Loss Cap</div><div class="value" id="rmDailyLoss">$0</div><div class="sub">Max: $400/day</div></div>
       </div>
     </div>
   </div>
@@ -482,6 +549,19 @@ const fmt = (n, d=2) => n.toLocaleString('en-US', {minimumFractionDigits:d, maxi
 const fmtUsd = n => '$' + fmt(Math.abs(n));
 const signUsd = n => (n >= 0 ? '+' : '-') + '$' + fmt(Math.abs(n));
 const cls = n => n >= 0 ? 'positive' : 'negative';
+const _prevPrices = {};
+let _lastPollTime = 0;
+
+function formatDuration(ms) {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return sec + 's';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return min + 'm ' + (sec % 60) + 's';
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return hr + 'h ' + (min % 60) + 'm';
+  const days = Math.floor(hr / 24);
+  return days + 'd ' + (hr % 24) + 'h';
+}
 
 const SYMBOL_NAMES = {
   'BRENT': 'Brent Crude',
@@ -543,6 +623,15 @@ function updateDashboard(s) {
   $('#mEquity').textContent = '$' + fmt(s.equity);
   $('#mEquity').className = 'value ' + cls(s.equity - 25000);
   $('#mUnrealized').innerHTML = 'Unrealized: <span class="' + cls(s.unrealized_pnl) + '">' + signUsd(s.unrealized_pnl) + '</span>';
+
+  // Total P&L
+  const totalPnl = s.equity - 25000;
+  const totalPnlPct = (totalPnl / 25000) * 100;
+  $('#mTotalPnl').textContent = signUsd(totalPnl);
+  $('#mTotalPnl').className = 'value ' + cls(totalPnl);
+  $('#mTotalPnlPct').textContent = (totalPnl >= 0 ? '+' : '') + totalPnlPct.toFixed(2) + '%';
+  $('#mTotalPnlPct').className = 'sub ' + cls(totalPnl);
+
   $('#mDailyPnl').textContent = signUsd(s.daily_pnl);
   $('#mDailyPnl').className = 'value ' + cls(s.daily_pnl);
   $('#mBuffer').textContent = '$' + fmt(s.buffer_to_floor);
@@ -552,6 +641,15 @@ function updateDashboard(s) {
   $('#mWinRate').textContent = 'Win rate: ' + s.win_rate + '%';
   $('#mDrawdown').textContent = '$' + fmt(s.max_drawdown);
   $('#mDrawdown').className = 'value ' + (s.max_drawdown > 500 ? 'negative' : '');
+
+  // Dynamic page title
+  document.title = `${signUsd(totalPnl)} | AutoTrader ${s.version || 'v4.0'}`;
+
+  // Last updated + pulse dot
+  _lastPollTime = Date.now();
+  $('#lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+  const dot = $('#pulseDot');
+  dot.className = 'pulse-dot' + (s.status === 'RUNNING' ? '' : s.status === 'PRICE_ERROR' ? ' stale' : ' error');
 
   // Floor Gauge
   const floorBase = s.hard_floor || 24000;
@@ -573,10 +671,14 @@ function updateDashboard(s) {
       pricesHtml += `<div class="price-card"><div class="sym">${sym}</div><div class="prc" style="color:var(--muted)">--</div></div>`;
       return;
     }
+    const prev = _prevPrices[sym];
+    const flashCls = prev && price !== prev ? (price > prev ? 'flash-up' : 'flash-down') : '';
+    const arrow = prev && price !== prev ? (price > prev ? ' <span style="color:var(--green)">&#9650;</span>' : ' <span style="color:var(--red)">&#9660;</span>') : '';
+    _prevPrices[sym] = price;
     const trendCls = ind ? 'trend-' + ind.trend : '';
-    pricesHtml += `<div class="price-card">
+    pricesHtml += `<div class="price-card ${flashCls}">
       <div class="sym">${SYMBOL_NAMES[sym]} (${sym})</div>
-      <div class="prc">$${fmt(price, SYMBOL_DECIMALS[sym] || 2)}</div>
+      <div class="prc">$${fmt(price, SYMBOL_DECIMALS[sym] || 2)}${arrow}</div>
       ${ind ? `<div class="ind">
         <span class="${trendCls}">Trend: ${ind.trend}</span><br>
         <span>RSI: ${ind.rsi.toFixed(1)}</span>
@@ -605,9 +707,11 @@ function updateDashboard(s) {
     let posHtml = '';
     s.open_positions.forEach(p => {
       const curPrice = s.prices[p.symbol] || p.entry_price;
+      const age = p.opened_at ? formatDuration(Date.now() - new Date(p.opened_at).getTime()) : '--';
+      const pnlPct = p.entry_price > 0 ? ((curPrice - p.entry_price) / p.entry_price * 100 * (p.side === 'BUY' ? 1 : -1)).toFixed(2) : '0.00';
       posHtml += `<div class="position ${p.side.toLowerCase()}">
         <div class="pos-header">
-          <span class="sym">${SYMBOL_NAMES[p.symbol]} (${p.symbol})</span>
+          <span class="sym">${SYMBOL_NAMES[p.symbol] || p.symbol} (${p.symbol})</span>
           <span class="side side-${p.side}">${p.side}</span>
         </div>
         <div class="pos-details">
@@ -616,8 +720,9 @@ function updateDashboard(s) {
           <strong>Qty:</strong> ${p.quantity}<br>
           <strong>Stop Loss:</strong> $${fmt(p.stop_loss, 4)} &nbsp;|&nbsp;
           <strong>Take Profit:</strong> $${fmt(p.take_profit, 4)}<br>
-          <strong>Unrealized P&L:</strong> <span class="${cls(p.unrealized_pnl)}">${signUsd(p.unrealized_pnl)}</span>
+          <strong>Unrealized P&L:</strong> <span class="${cls(p.unrealized_pnl)}">${signUsd(p.unrealized_pnl)} (${pnlPct}%)</span>
         </div>
+        <div class="pos-age">Open for <span class="age-val">${age}</span></div>
         <div class="pos-reason">${(s.ai_explanations && s.ai_explanations[p.id]) || p.reason}</div>
         ${p.ai_confidence ? `<span class="ai-badge">AI ${p.ai_confidence}%</span>` : ''}
       </div>`;
@@ -631,9 +736,10 @@ function updateDashboard(s) {
   } else {
     let html = '';
     [...s.closed_trades].reverse().forEach(t => {
+      const dur = (t.opened_at && t.closed_at) ? formatDuration(new Date(t.closed_at).getTime() - new Date(t.opened_at).getTime()) : '';
       html += `<div class="trade-entry">
         <div class="trade-header">
-          <span><span class="side side-${t.side}" style="font-size:10px;padding:1px 6px">${t.side}</span> ${SYMBOL_NAMES[t.symbol] || t.symbol}</span>
+          <span><span class="side side-${t.side}" style="font-size:10px;padding:1px 6px">${t.side}</span> ${SYMBOL_NAMES[t.symbol] || t.symbol}${dur ? ` <span style="color:var(--muted);font-size:10px">(${dur})</span>` : ''}</span>
           <span class="trade-pnl ${cls(t.pnl)}">${signUsd(t.pnl)}</span>
         </div>
         <div class="trade-reasons">
@@ -991,8 +1097,17 @@ async function loadJournal() {
 }
 
 // ── Polling ─────────────────────────────────────────────────────────────
+const _pageLoad = Date.now();
 function tick() {
   $('#clock').textContent = new Date().toLocaleTimeString();
+  // Page uptime in footer
+  const upEl = $('#footerUptime');
+  if (upEl) upEl.textContent = 'Page open ' + formatDuration(Date.now() - _pageLoad);
+  // Stale detection: if no poll response in 10s, show yellow dot
+  if (_lastPollTime > 0 && Date.now() - _lastPollTime > 10000) {
+    const dot = $('#pulseDot');
+    if (dot && !dot.classList.contains('error')) dot.className = 'pulse-dot stale';
+  }
 }
 
 let pollCount = 0;
@@ -1020,8 +1135,10 @@ loadJournal();
 </script>
 
 <div style="text-align:center;padding:20px 0 14px;color:var(--muted);font-size:11px;border-top:1px solid var(--border);margin-top:20px">
-  Made with &#10084; by <a href="https://github.com/FarisElshammouty" target="_blank" style="color:var(--accent);text-decoration:none">Faris</a>
+  Built by <a href="https://github.com/FarisElshammouty" target="_blank" style="color:var(--accent);text-decoration:none">Faris</a>
   &nbsp;&middot;&nbsp; {{ version }}
+  &nbsp;&middot;&nbsp; Polling every 3s
+  &nbsp;&middot;&nbsp; <span id="footerUptime"></span>
 </div>
 </body>
 </html>
