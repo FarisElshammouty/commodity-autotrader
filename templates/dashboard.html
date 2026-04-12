@@ -1416,8 +1416,9 @@ function toggleSound() {
 }
 function updateSoundButton() {
   const btn = document.getElementById('soundToggle');
-  if (_soundEnabled) { btn.textContent = '\u{1F50A} Sound ON'; btn.classList.add('active'); }
-  else { btn.textContent = '\u{1F508} Sound'; btn.classList.remove('active'); }
+  if (!btn) return;
+  if (_soundEnabled) { btn.innerHTML = '&#128266; Sound ON'; btn.classList.add('active'); }
+  else { btn.innerHTML = '&#128264; Sound'; btn.classList.remove('active'); }
 }
 updateSoundButton();
 
