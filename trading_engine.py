@@ -200,6 +200,8 @@ class TradingEngine:
         self._lock = threading.Lock()
 
         self._save_counter = 0  # for periodic state saves
+        self._last_scan_time: float = 0  # timestamp of last strategy evaluation
+        self._scan_stats: dict = {"evaluated": 0, "signals": 0, "blocked": 0, "executed": 0}
         self._loss_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after losses
         self._trade_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after ANY trade
         self._recent_trades_pnl: deque = deque(maxlen=20)  # rolling 20-trade P&L for equity curve trading
@@ -1086,6 +1088,9 @@ class TradingEngine:
         self._check_time_exits()
         self._trail_stops()
 
+        self._last_scan_time = time.time()
+        scan_stats = {"evaluated": 0, "signals": 0, "blocked": 0, "executed": 0}
+
         summaries = []
         session = self._get_current_session()
         for symbol in SYMBOLS:
@@ -1096,6 +1101,7 @@ class TradingEngine:
             price = self.prices[symbol]
 
             signal = self._generate_signal(symbol, ind, price)
+            scan_stats["evaluated"] += 1
             sig_str = f"{signal['side'].value}(str={signal['strength']:.1f})" if signal else "NONE"
             summaries.append(f"{symbol}={sig_str}")
 
@@ -1112,6 +1118,7 @@ class TradingEngine:
             if not signal:
                 continue
 
+            scan_stats["signals"] += 1
             journal_entry["side"] = signal["side"].value
             journal_entry["strength"] = float(signal["strength"])
             journal_entry["reasons"] = "; ".join(signal["reasons"])
@@ -1120,12 +1127,14 @@ class TradingEngine:
             if not can_open:
                 summaries[-1] += f"[blocked:{reason}]"
                 journal_entry["action"] = f"BLOCKED:{reason}"
+                scan_stats["blocked"] += 1
                 try:
                     db.save_signal(journal_entry)
                 except Exception as e:
                     self._log(f"Journal save error (blocked): {e}", level="ERROR")
                 continue
 
+            scan_stats["executed"] += 1
             journal_entry["action"] = "EXECUTED"
             try:
                 db.save_signal(journal_entry)
@@ -1161,6 +1170,7 @@ class TradingEngine:
             if signal:
                 self._execute_signal(symbol, signal, ind, price, ai_result=ai_result)
 
+        self._scan_stats = scan_stats
         self._log(f"Strategy scan [{session['name']}]: {' | '.join(summaries)} | Equity=${self.equity:.2f} | Buffer=${self.equity - self.hard_floor:.2f}")
 
     def _generate_signal(self, symbol: str, ind: dict, price: float) -> dict | None:
@@ -1898,6 +1908,10 @@ class TradingEngine:
             "log": self.trade_log[-50:],
             "status": self.status,
             "timestamp": datetime.now().isoformat(),
+            "last_scan_time": self._last_scan_time,
+            "scan_interval": STRATEGY_INTERVAL,
+            "scan_stats": self._scan_stats,
+            "version": "v4.0",
         }
 
     # ── Main Loop ───────────────────────────────────────────────────────────

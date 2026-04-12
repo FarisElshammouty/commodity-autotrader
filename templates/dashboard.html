@@ -306,6 +306,101 @@
 
   /* ── Metric value transition ─────────────────────── */
   .metric .value { transition: color 0.3s ease; }
+
+  /* ── Profit Stats Bar ────────────────────────────── */
+  .profit-stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px;
+    margin-bottom: 16px;
+  }
+  .pstat {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 10px 12px; text-align: center;
+  }
+  .pstat .pstat-label { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 3px; }
+  .pstat .pstat-val { font-size: 18px; font-weight: 700; }
+  .pstat .pstat-sub { font-size: 9px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Toast Notifications ─────────────────────────── */
+  .toast-container {
+    position: fixed; top: 60px; right: 16px; z-index: 9999;
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: none; max-width: 360px;
+  }
+  .toast {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    animation: toast-in 0.4s ease, toast-out 0.4s ease 4.6s forwards;
+    pointer-events: auto; display: flex; align-items: flex-start; gap: 10px;
+    backdrop-filter: blur(10px); min-width: 280px;
+  }
+  .toast.trade-open { border-left: 3px solid var(--accent); }
+  .toast.trade-close-win { border-left: 3px solid var(--green); }
+  .toast.trade-close-lose { border-left: 3px solid var(--red); }
+  .toast .toast-icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+  .toast .toast-body { flex: 1; }
+  .toast .toast-title { font-size: 12px; font-weight: 700; margin-bottom: 2px; }
+  .toast .toast-msg { font-size: 11px; color: var(--muted); line-height: 1.4; }
+  @keyframes toast-in { from { opacity: 0; transform: translateX(80px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes toast-out { from { opacity: 1; } to { opacity: 0; transform: translateY(-10px); } }
+
+  /* ── Scan Countdown ──────────────────────────────── */
+  .scan-bar {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; margin-bottom: 16px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    font-size: 11px; color: var(--muted);
+  }
+  .scan-bar .scan-progress-bg {
+    flex: 1; height: 6px; background: #1e293b; border-radius: 3px; overflow: hidden;
+  }
+  .scan-bar .scan-progress-fill {
+    height: 100%; background: var(--accent); border-radius: 3px;
+    transition: width 1s linear;
+  }
+  .scan-bar .scan-label { font-weight: 600; white-space: nowrap; min-width: 90px; }
+  .scan-bar .scan-stats { display: flex; gap: 12px; font-size: 10px; }
+  .scan-bar .scan-stats span { white-space: nowrap; }
+
+  /* ── Mobile Responsive ───────────────────────────── */
+  @media (max-width: 768px) {
+    .header { flex-direction: column; gap: 8px; padding: 10px 14px; }
+    .header h1 { font-size: 16px; }
+    .header > div { flex-wrap: wrap; justify-content: center; }
+    .container { padding: 10px; }
+    .metrics { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .metric { padding: 10px; }
+    .metric .value { font-size: 18px; }
+    .metric .label { font-size: 9px; }
+    .grid { grid-template-columns: 1fr; gap: 10px; }
+    .profit-stats { grid-template-columns: repeat(2, 1fr); gap: 6px; }
+    .pstat .pstat-val { font-size: 15px; }
+    .strategy-bar { flex-wrap: wrap; gap: 4px; padding: 6px 10px; }
+    .strategy-bar .strat-chip { font-size: 9px; padding: 2px 6px; }
+    .scan-bar { flex-wrap: wrap; gap: 6px; }
+    .scan-bar .scan-stats { flex-wrap: wrap; gap: 6px; }
+    .risk-grid { grid-template-columns: repeat(2, 1fr); }
+    .risk-item .value { font-size: 16px; }
+    .charts-row { grid-template-columns: 1fr !important; }
+    .chart-container { height: 130px; }
+    .prices-grid { grid-template-columns: repeat(2, 1fr); }
+    .price-card .prc { font-size: 16px; }
+    .heatmap-table { font-size: 8px; }
+    .heatmap-table th, .heatmap-table td { padding: 2px 3px; min-width: 22px; }
+    .floor-gauge { padding: 10px; }
+    .section-header h2 { font-size: 11px; }
+    .sentiment-row { grid-template-columns: repeat(2, 1fr); }
+    .toast-container { right: 8px; left: 8px; max-width: none; }
+    .toast { min-width: auto; }
+    .dd-stats { grid-template-columns: repeat(2, 1fr); }
+    .pos-details { font-size: 10px; }
+    .log-area { font-size: 9px; }
+  }
+  @media (max-width: 400px) {
+    .metrics { grid-template-columns: 1fr; }
+    .profit-stats { grid-template-columns: 1fr; }
+    .prices-grid { grid-template-columns: 1fr; }
+    .strategy-bar .strat-label { display: block; width: 100%; margin-bottom: 2px; }
+  }
 </style>
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 </head>
@@ -327,6 +422,9 @@
   </div>
 </div>
 
+<!-- Toast Notification Container -->
+<div class="toast-container" id="toastContainer"></div>
+
 <div class="container">
   <!-- Strategy Info Bar -->
   <div class="strategy-bar">
@@ -338,6 +436,28 @@
     <span class="strat-chip">Trade Cooldown <span class="strat-val">30min</span></span>
     <span class="strat-chip">HTF Filter <span class="strat-val" style="color:var(--green)">Mandatory</span></span>
     <span class="strat-chip">Scan Interval <span class="strat-val">60s</span></span>
+  </div>
+
+  <!-- Scan Countdown -->
+  <div class="scan-bar" id="scanBar">
+    <span class="scan-label" id="scanLabel">Next scan in --s</span>
+    <div class="scan-progress-bg"><div class="scan-progress-fill" id="scanFill" style="width:0%"></div></div>
+    <div class="scan-stats">
+      <span>Scanned: <strong id="scanEval">0</strong>/8</span>
+      <span>Signals: <strong id="scanSig" style="color:var(--accent)">0</strong></span>
+      <span>Blocked: <strong id="scanBlock" style="color:var(--yellow)">0</strong></span>
+      <span>Executed: <strong id="scanExec" style="color:var(--green)">0</strong></span>
+    </div>
+  </div>
+
+  <!-- Profit Stats -->
+  <div class="profit-stats" id="profitStats">
+    <div class="pstat"><div class="pstat-label">Profit Factor</div><div class="pstat-val" id="psPF">--</div><div class="pstat-sub">Gross win / Gross loss</div></div>
+    <div class="pstat"><div class="pstat-label">Avg Win</div><div class="pstat-val positive" id="psAvgW">--</div><div class="pstat-sub" id="psAvgWSub">per winning trade</div></div>
+    <div class="pstat"><div class="pstat-label">Avg Loss</div><div class="pstat-val negative" id="psAvgL">--</div><div class="pstat-sub" id="psAvgLSub">per losing trade</div></div>
+    <div class="pstat"><div class="pstat-label">Best Trade</div><div class="pstat-val positive" id="psBest">--</div><div class="pstat-sub" id="psBestSub">--</div></div>
+    <div class="pstat"><div class="pstat-label">Worst Trade</div><div class="pstat-val negative" id="psWorst">--</div><div class="pstat-sub" id="psWorstSub">--</div></div>
+    <div class="pstat"><div class="pstat-label">Expectancy</div><div class="pstat-val" id="psExpect">--</div><div class="pstat-sub">Avg $ per trade</div></div>
   </div>
 
   <!-- Metrics -->
@@ -905,6 +1025,122 @@ function updateDashboard(s) {
 let _lastState = null;
 function refreshState() { if (_lastState) updateDashboard(_lastState); }
 
+// ── Profit Stats ────────────────────────────────────────────────────────
+function updateProfitStats(s) {
+  const trades = s.closed_trades || [];
+  if (trades.length === 0) return;
+  const wins = trades.filter(t => t.pnl > 0);
+  const losses = trades.filter(t => t.pnl <= 0);
+  const grossWin = wins.reduce((a, t) => a + t.pnl, 0);
+  const grossLoss = Math.abs(losses.reduce((a, t) => a + t.pnl, 0));
+  const pf = grossLoss > 0 ? (grossWin / grossLoss) : grossWin > 0 ? 999 : 0;
+  const avgW = wins.length > 0 ? grossWin / wins.length : 0;
+  const avgL = losses.length > 0 ? grossLoss / losses.length : 0;
+  const best = trades.reduce((a, t) => t.pnl > a.pnl ? t : a, trades[0]);
+  const worst = trades.reduce((a, t) => t.pnl < a.pnl ? t : a, trades[0]);
+  const expectancy = trades.reduce((a, t) => a + t.pnl, 0) / trades.length;
+
+  const pfEl = document.getElementById('psPF');
+  pfEl.textContent = pf >= 999 ? 'INF' : pf.toFixed(2);
+  pfEl.className = 'pstat-val ' + (pf >= 1.5 ? 'positive' : pf >= 1 ? 'warning' : 'negative');
+
+  document.getElementById('psAvgW').textContent = '+$' + fmt(avgW);
+  document.getElementById('psAvgWSub').textContent = wins.length + ' winning trades';
+  document.getElementById('psAvgL').textContent = '-$' + fmt(avgL);
+  document.getElementById('psAvgLSub').textContent = losses.length + ' losing trades';
+
+  document.getElementById('psBest').textContent = '+$' + fmt(best.pnl);
+  document.getElementById('psBestSub').textContent = (SYMBOL_NAMES[best.symbol] || best.symbol) + ' ' + best.side;
+  document.getElementById('psWorst').textContent = '-$' + fmt(Math.abs(worst.pnl));
+  document.getElementById('psWorstSub').textContent = (SYMBOL_NAMES[worst.symbol] || worst.symbol) + ' ' + worst.side;
+
+  const expEl = document.getElementById('psExpect');
+  expEl.textContent = signUsd(expectancy);
+  expEl.className = 'pstat-val ' + cls(expectancy);
+}
+
+// ── Toast Notifications ─────────────────────────────────────────────────
+let _prevPositionIds = new Set();
+let _prevClosedCount = 0;
+
+function showToast(type, title, message) {
+  const container = document.getElementById('toastContainer');
+  const toast = document.createElement('div');
+  toast.className = 'toast ' + type;
+  const icon = type === 'trade-open' ? '&#128200;' : type === 'trade-close-win' ? '&#9989;' : '&#10060;';
+  toast.innerHTML = `<span class="toast-icon">${icon}</span><div class="toast-body"><div class="toast-title">${title}</div><div class="toast-msg">${message}</div></div>`;
+  container.appendChild(toast);
+  setTimeout(() => { if (toast.parentNode) toast.parentNode.removeChild(toast); }, 5000);
+}
+
+function checkTradeEvents(s) {
+  const currentIds = new Set(s.open_positions.map(p => p.id));
+  const currentClosedCount = s.closed_trades.length;
+
+  // Detect new positions opened
+  currentIds.forEach(id => {
+    if (!_prevPositionIds.has(id)) {
+      const pos = s.open_positions.find(p => p.id === id);
+      if (pos) {
+        showToast('trade-open',
+          `${pos.side} ${SYMBOL_NAMES[pos.symbol] || pos.symbol}`,
+          `Entry: $${fmt(pos.entry_price, 4)} | SL: $${fmt(pos.stop_loss, 4)} | TP: $${fmt(pos.take_profit, 4)}`
+        );
+      }
+    }
+  });
+
+  // Detect new closed trades
+  if (currentClosedCount > _prevClosedCount && _prevClosedCount > 0) {
+    const newTrades = s.closed_trades.slice(_prevClosedCount);
+    newTrades.forEach(t => {
+      const type = t.pnl >= 0 ? 'trade-close-win' : 'trade-close-lose';
+      showToast(type,
+        `Closed ${t.side} ${SYMBOL_NAMES[t.symbol] || t.symbol}`,
+        `P&L: ${signUsd(t.pnl)} | ${t.reason_close}`
+      );
+    });
+  }
+
+  _prevPositionIds = currentIds;
+  _prevClosedCount = currentClosedCount;
+}
+
+// ── Scan Countdown ──────────────────────────────────────────────────────
+let _scanInterval = 60;
+let _lastScanTime = 0;
+
+function updateScanCountdown(s) {
+  if (s.scan_interval) _scanInterval = s.scan_interval;
+  if (s.last_scan_time) _lastScanTime = s.last_scan_time;
+  if (s.scan_stats) {
+    document.getElementById('scanEval').textContent = s.scan_stats.evaluated || 0;
+    document.getElementById('scanSig').textContent = s.scan_stats.signals || 0;
+    document.getElementById('scanBlock').textContent = s.scan_stats.blocked || 0;
+    document.getElementById('scanExec').textContent = s.scan_stats.executed || 0;
+  }
+}
+
+function tickScanBar() {
+  if (_lastScanTime <= 0) return;
+  const elapsed = (Date.now() / 1000) - _lastScanTime;
+  const remaining = Math.max(0, _scanInterval - elapsed);
+  const pct = Math.min(100, (elapsed / _scanInterval) * 100);
+  const label = document.getElementById('scanLabel');
+  const fill = document.getElementById('scanFill');
+  if (remaining <= 0) {
+    label.textContent = 'Scanning now...';
+    label.style.color = 'var(--accent)';
+    fill.style.width = '100%';
+    fill.style.background = 'var(--green)';
+  } else {
+    label.textContent = `Next scan in ${Math.ceil(remaining)}s`;
+    label.style.color = 'var(--muted)';
+    fill.style.width = pct + '%';
+    fill.style.background = 'var(--accent)';
+  }
+}
+
 // ── Charts ──────────────────────────────────────────────────────────────
 const SYMS = Object.keys(SYMBOL_NAMES);
 const chartState = {};
@@ -1119,6 +1355,9 @@ async function poll() {
     updateDashboard(data);
     updateCharts(data);
     updateEquityChart(data);
+    updateProfitStats(data);
+    updateScanCountdown(data);
+    checkTradeEvents(data);
     // Refresh journal every 10th poll (~30s)
     pollCount++;
     if (pollCount % 10 === 1) loadJournal();
@@ -1129,6 +1368,7 @@ async function poll() {
 
 setInterval(tick, 1000);
 setInterval(poll, 3000);
+setInterval(tickScanBar, 1000);
 tick();
 poll();
 loadJournal();
