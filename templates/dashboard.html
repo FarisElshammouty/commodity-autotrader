@@ -1520,6 +1520,9 @@ function updateStreaks(s) {
   }
   document.getElementById('streakRecords').textContent = `Best win streak: ${bw} | Worst loss streak: ${bl}`;
 }
+
+const _pageLoad = Date.now();
+function tick() {
   $('#clock').textContent = new Date().toLocaleTimeString();
   // Page uptime in footer
   const upEl = $('#footerUptime');
