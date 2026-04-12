@@ -155,10 +155,15 @@ def api_reset():
     engine.closed_trades.clear()
     engine.trade_log.clear()
     engine._consecutive_losses = 0
+    engine._consecutive_wins = 0
+    engine._best_win_streak = 0
+    engine._best_loss_streak = 0
     engine._loss_breaker_until = 0
     engine._recent_trades_pnl.clear()
     engine._trade_cooldowns.clear()
     engine._loss_cooldowns.clear()
+    engine._equity_snapshots.clear()
+    engine._last_equity_snapshot = 0
     # Wipe database
     db.reset_db()
     engine._log("Engine reset to fresh $25,000 start", level="INFO")

@@ -206,7 +206,12 @@ class TradingEngine:
         self._trade_cooldowns: dict[str, float] = {}  # {symbol: timestamp} — cooldown after ANY trade
         self._recent_trades_pnl: deque = deque(maxlen=20)  # rolling 20-trade P&L for equity curve trading
         self._consecutive_losses: int = 0           # consecutive loss breaker
+        self._consecutive_wins: int = 0             # current win streak
+        self._best_win_streak: int = 0              # all-time best win streak
+        self._best_loss_streak: int = 0             # all-time worst loss streak
         self._loss_breaker_until: float = 0         # timestamp when breaker expires
+        self._equity_snapshots: deque = deque(maxlen=300)  # periodic equity snapshots for smooth curve
+        self._last_equity_snapshot: float = 0       # timestamp of last snapshot
         self._price_timestamps: dict[str, float] = {}  # {symbol: last_update_timestamp}
         self._atr_history: dict[str, deque] = {     # rolling ATR values for vol-norm sizing
             sym: deque(maxlen=50) for sym in SYMBOLS
@@ -1091,6 +1096,15 @@ class TradingEngine:
         self._last_scan_time = time.time()
         scan_stats = {"evaluated": 0, "signals": 0, "blocked": 0, "executed": 0}
 
+        # Periodic equity snapshot (every 5 min) for smooth equity curve
+        now = time.time()
+        if now - self._last_equity_snapshot >= 300:
+            self._equity_snapshots.append({
+                "time": datetime.now().isoformat(),
+                "equity": round(self.equity, 2),
+            })
+            self._last_equity_snapshot = now
+
         summaries = []
         session = self._get_current_session()
         for symbol in SYMBOLS:
@@ -1618,11 +1632,17 @@ class TradingEngine:
             if pnl > 0:
                 self.winning_trades += 1
                 self._consecutive_losses = 0  # reset streak on win
+                self._consecutive_wins += 1
+                if self._consecutive_wins > self._best_win_streak:
+                    self._best_win_streak = self._consecutive_wins
             else:
+                self._consecutive_wins = 0  # reset win streak on loss
                 # Loss cooldown: prevent re-entry on this symbol for a while
                 self._loss_cooldowns[pos.symbol] = time.time() + LOSS_COOLDOWN_SEC
                 # Consecutive Loss Breaker (Feature 9)
                 self._consecutive_losses += 1
+                if self._consecutive_losses > self._best_loss_streak:
+                    self._best_loss_streak = self._consecutive_losses
                 if self._consecutive_losses >= 3:
                     cooldown = 600 * (self._consecutive_losses - 2)  # 10min, 20min, 30min...
                     cooldown = min(cooldown, 3600)  # cap at 1 hour
@@ -1844,12 +1864,18 @@ class TradingEngine:
 
     # ── State Snapshot (for API) ────────────────────────────────────────────
     def _build_equity_curve(self) -> list[dict]:
-        """Build equity curve from closed trades for charting."""
+        """Build equity curve from closed trades + periodic snapshots for smooth charting."""
+        # Trade-based points
         curve = [{"time": datetime.now().isoformat(), "balance": self.starting_balance}]
         running = self.starting_balance
         for t in self.closed_trades:
             running += t.pnl
             curve.append({"time": t.closed_at, "balance": round(running, 2)})
+        # Merge periodic equity snapshots (includes unrealized P&L)
+        for snap in self._equity_snapshots:
+            curve.append({"time": snap["time"], "balance": snap["equity"]})
+        # Add current live point
+        curve.append({"time": datetime.now().isoformat(), "balance": round(self.equity, 2)})
         return curve
 
     def get_state(self) -> dict:
@@ -1912,6 +1938,20 @@ class TradingEngine:
             "scan_interval": STRATEGY_INTERVAL,
             "scan_stats": self._scan_stats,
             "version": "v4.0",
+            # Streak tracking
+            "consecutive_wins": self._consecutive_wins,
+            "best_win_streak": self._best_win_streak,
+            "best_loss_streak": self._best_loss_streak,
+            # Cooldown timers per symbol
+            "cooldowns": {
+                sym: {
+                    "trade_cd": max(0, int(self._trade_cooldowns.get(sym, 0) - time.time())),
+                    "loss_cd": max(0, int(self._loss_cooldowns.get(sym, 0) - time.time())),
+                }
+                for sym in SYMBOLS
+                if self._trade_cooldowns.get(sym, 0) > time.time()
+                or self._loss_cooldowns.get(sym, 0) > time.time()
+            },
         }
 
     # ── Main Loop ───────────────────────────────────────────────────────────

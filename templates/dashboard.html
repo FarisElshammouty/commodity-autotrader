@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Commodity Auto-Trader</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   :root {
     --bg: #0a0e17; --card: #111827; --border: #1e293b;
@@ -361,6 +362,42 @@
   .scan-bar .scan-stats { display: flex; gap: 12px; font-size: 10px; }
   .scan-bar .scan-stats span { white-space: nowrap; }
 
+  /* ── Cooldown Panel ───────────────────────────────── */
+  .cooldown-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .cd-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 8px;
+    background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.2);
+    font-size: 11px;
+  }
+  .cd-chip .cd-sym { font-weight: 700; color: var(--accent); }
+  .cd-chip .cd-timer { color: var(--yellow); font-weight: 600; font-family: 'Cascadia Code','Fira Code',monospace; }
+  .cd-chip .cd-type { font-size: 9px; color: var(--muted); text-transform: uppercase; }
+  .cd-empty { color: var(--muted); font-size: 11px; font-style: italic; }
+
+  /* ── Streak Badge ────────────────────────────────── */
+  .streak-row {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    margin-top: 6px;
+  }
+  .streak-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
+  }
+  .streak-win { background: rgba(34,197,94,0.12); color: var(--green); }
+  .streak-loss { background: rgba(239,68,68,0.12); color: var(--red); }
+  .streak-record { font-size: 9px; color: var(--muted); font-weight: 400; }
+
+  /* ── Sound Toggle ────────────────────────────────── */
+  .sound-toggle {
+    cursor: pointer; padding: 3px 8px; border-radius: 6px;
+    font-size: 11px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); transition: all 0.2s;
+    user-select: none;
+  }
+  .sound-toggle:hover { border-color: var(--accent); color: var(--text); }
+  .sound-toggle.active { background: rgba(59,130,246,0.15); color: var(--accent); border-color: rgba(59,130,246,0.3); }
+
   /* ── Mobile Responsive ───────────────────────────── */
   @media (max-width: 768px) {
     .header { flex-direction: column; gap: 8px; padding: 10px 14px; }
@@ -394,6 +431,9 @@
     .dd-stats { grid-template-columns: repeat(2, 1fr); }
     .pos-details { font-size: 10px; }
     .log-area { font-size: 9px; }
+    .cooldown-grid { gap: 4px; }
+    .cd-chip { font-size: 10px; padding: 3px 8px; }
+    .streak-badge { font-size: 10px; }
   }
   @media (max-width: 400px) {
     .metrics { grid-template-columns: 1fr; }
@@ -415,6 +455,7 @@
     <a href="/backtest" style="color:var(--muted);font-size:11px;text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:6px;transition:color 0.2s" onmouseover="this.style.color='var(--text)'" onmouseout="this.style.color='var(--muted)'">Backtest</a>
     <span id="sessionBadge" class="session-badge session-ASIAN">Session: ...</span>
     <span id="aiBadge" class="ai-off">AI OFF</span>
+    <span class="sound-toggle" id="soundToggle" onclick="toggleSound()" title="Toggle trade sound alerts">&#128264; Sound</span>
     <span class="pulse-dot" id="pulseDot"></span>
     <span id="statusBadge" class="status-badge status-INITIALIZING">INITIALIZING</span>
     <span class="last-updated" id="lastUpdated"></span>
@@ -537,6 +578,34 @@
         <div class="risk-item"><div class="label">Price Staleness</div><div class="value" id="rmStaleness">OK</div><div class="sub">Max 2min age</div></div>
         <div class="risk-item"><div class="label">Drawdown</div><div class="value" id="rmDrawdown">--</div><div class="sub" id="rmDrawdownSub">Recovery progress</div></div>
         <div class="risk-item"><div class="label">Daily Loss Cap</div><div class="value" id="rmDailyLoss">$0</div><div class="sub">Max: $400/day</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ COOLDOWNS & STREAKS ═══════ -->
+  <div class="grid">
+    <div class="section open" id="sec-cooldowns">
+      <div class="section-header" onclick="toggleSection('sec-cooldowns')">
+        <h2>Symbol Cooldowns <span id="cdCount" style="color:var(--muted);font-size:11px;font-weight:400;margin-left:6px"></span></h2>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body" id="cooldownArea">
+        <div class="cd-empty">No active cooldowns</div>
+      </div>
+    </div>
+    <div class="section open" id="sec-streaks">
+      <div class="section-header" onclick="toggleSection('sec-streaks')">
+        <h2>Win/Loss Streaks</h2>
+        <span class="chevron">&#9660;</span>
+      </div>
+      <div class="section-body" id="streakArea">
+        <div class="streak-row">
+          <span class="streak-badge streak-win" id="streakWin">&#9650; 0 Wins</span>
+          <span class="streak-badge streak-loss" id="streakLoss">&#9660; 0 Losses</span>
+        </div>
+        <div class="streak-row" style="margin-top:8px">
+          <span class="streak-record" id="streakRecords">Best win streak: 0 | Worst loss streak: 0</span>
+        </div>
       </div>
     </div>
   </div>
@@ -1086,6 +1155,7 @@ function checkTradeEvents(s) {
           `${pos.side} ${SYMBOL_NAMES[pos.symbol] || pos.symbol}`,
           `Entry: $${fmt(pos.entry_price, 4)} | SL: $${fmt(pos.stop_loss, 4)} | TP: $${fmt(pos.take_profit, 4)}`
         );
+        playSound('open');
       }
     }
   });
@@ -1099,6 +1169,7 @@ function checkTradeEvents(s) {
         `Closed ${t.side} ${SYMBOL_NAMES[t.symbol] || t.symbol}`,
         `P&L: ${signUsd(t.pnl)} | ${t.reason_close}`
       );
+      playSound(t.pnl >= 0 ? 'win' : 'loss');
     });
   }
 
@@ -1333,8 +1404,121 @@ async function loadJournal() {
 }
 
 // ── Polling ─────────────────────────────────────────────────────────────
-const _pageLoad = Date.now();
-function tick() {
+// ── Sound System ────────────────────────────────────────────────────────
+let _soundEnabled = false;
+try { _soundEnabled = localStorage.getItem('soundEnabled') === 'true'; } catch(e) {}
+
+function toggleSound() {
+  _soundEnabled = !_soundEnabled;
+  try { localStorage.setItem('soundEnabled', _soundEnabled); } catch(e) {}
+  updateSoundButton();
+  if (_soundEnabled) playSound('click');
+}
+function updateSoundButton() {
+  const btn = document.getElementById('soundToggle');
+  if (_soundEnabled) { btn.textContent = '\u{1F50A} Sound ON'; btn.classList.add('active'); }
+  else { btn.textContent = '\u{1F508} Sound'; btn.classList.remove('active'); }
+}
+updateSoundButton();
+
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new AudioCtx();
+  return _audioCtx;
+}
+function playSound(type) {
+  if (!_soundEnabled) return;
+  try {
+    const ctx = getAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.value = 0.15;
+    if (type === 'open') {
+      osc.frequency.value = 880; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'win') {
+      osc.frequency.value = 660; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.15);
+      // second tone
+      const osc2 = ctx.createOscillator(); const g2 = ctx.createGain();
+      osc2.connect(g2); g2.connect(ctx.destination);
+      osc2.frequency.value = 880; osc2.type = 'sine';
+      g2.gain.setValueAtTime(0.12, ctx.currentTime + 0.15);
+      g2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
+      osc2.start(ctx.currentTime + 0.15); osc2.stop(ctx.currentTime + 0.35);
+    } else if (type === 'loss') {
+      osc.frequency.value = 330; osc.type = 'triangle';
+      gain.gain.setValueAtTime(0.12, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.4);
+    } else { // click
+      osc.frequency.value = 1000; osc.type = 'sine';
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.05);
+      osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.05);
+    }
+  } catch(e) {}
+}
+
+// ── Cooldown Panel ──────────────────────────────────────────────────────
+function updateCooldowns(s) {
+  const cd = s.cooldowns || {};
+  const area = document.getElementById('cooldownArea');
+  const count = Object.keys(cd).length;
+  document.getElementById('cdCount').textContent = count > 0 ? `(${count} active)` : '';
+  if (count === 0) {
+    area.innerHTML = '<div class="cd-empty">No active cooldowns — all symbols ready to trade</div>';
+    return;
+  }
+  let html = '<div class="cooldown-grid">';
+  Object.entries(cd).forEach(([sym, timers]) => {
+    if (timers.trade_cd > 0) {
+      const min = Math.floor(timers.trade_cd / 60);
+      const sec = timers.trade_cd % 60;
+      html += `<div class="cd-chip"><span class="cd-sym">${sym}</span><span class="cd-type">Trade</span><span class="cd-timer">${min}:${String(sec).padStart(2,'0')}</span></div>`;
+    }
+    if (timers.loss_cd > 0) {
+      const min = Math.floor(timers.loss_cd / 60);
+      const sec = timers.loss_cd % 60;
+      html += `<div class="cd-chip" style="border-color:rgba(239,68,68,0.2);background:rgba(239,68,68,0.08)"><span class="cd-sym">${sym}</span><span class="cd-type">Loss</span><span class="cd-timer" style="color:var(--red)">${min}:${String(sec).padStart(2,'0')}</span></div>`;
+    }
+  });
+  html += '</div>';
+  area.innerHTML = html;
+}
+
+// ── Streak Display ──────────────────────────────────────────────────────
+function updateStreaks(s) {
+  const cw = s.consecutive_wins || 0;
+  const cl = s.consecutive_losses || 0;
+  const bw = s.best_win_streak || 0;
+  const bl = s.best_loss_streak || 0;
+
+  const winEl = document.getElementById('streakWin');
+  const lossEl = document.getElementById('streakLoss');
+  if (cw > 0) {
+    winEl.innerHTML = '&#9650; ' + cw + ' Win' + (cw > 1 ? 's' : '') + (cw >= 3 ? ' &#128293;' : '');
+    winEl.style.display = '';
+  } else {
+    winEl.innerHTML = '&#9650; 0 Wins';
+    winEl.style.display = '';
+  }
+  if (cl > 0) {
+    lossEl.innerHTML = '&#9660; ' + cl + ' Loss' + (cl > 1 ? 'es' : '') + (cl >= 3 ? ' &#9888;' : '');
+    lossEl.style.display = '';
+  } else {
+    lossEl.innerHTML = '&#9660; 0 Losses';
+    lossEl.style.display = '';
+  }
+  document.getElementById('streakRecords').textContent = `Best win streak: ${bw} | Worst loss streak: ${bl}`;
+}
   $('#clock').textContent = new Date().toLocaleTimeString();
   // Page uptime in footer
   const upEl = $('#footerUptime');
@@ -1357,6 +1541,8 @@ async function poll() {
     updateEquityChart(data);
     updateProfitStats(data);
     updateScanCountdown(data);
+    updateCooldowns(data);
+    updateStreaks(data);
     checkTradeEvents(data);
     // Refresh journal every 10th poll (~30s)
     pollCount++;

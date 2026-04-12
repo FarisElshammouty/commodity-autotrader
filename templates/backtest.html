@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Backtest — AutoTrader {{ version }}</title>
+<link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
 <style>
   :root {
     --bg: #0a0e17; --card: #111827; --border: #1e293b;
@@ -109,7 +110,7 @@
 
 <div class="header">
   <div style="display:flex;align-items:center;gap:12px">
-    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">Backtest & Optimization — 14 Instruments</small></h1>
+    <h1><span>AUTO</span>TRADER <small style="color:var(--muted);font-size:12px;margin-left:8px">Backtest & Optimization — 8 Instruments</small></h1>
     <span style="background:rgba(59,130,246,0.15);color:var(--accent);font-size:11px;font-weight:600;padding:2px 8px;border-radius:10px;border:1px solid rgba(59,130,246,0.3)">{{ version }}</span>
   </div>
   <a href="/" style="color:var(--muted);font-size:13px;text-decoration:none;padding:6px 14px;border:1px solid var(--border);border-radius:8px">← Dashboard</a>
@@ -149,27 +150,21 @@
         <div class="control-group">
           <label>Symbols</label>
           <select id="btSymbols">
-            <option value="">All 15 symbols</option>
-            <optgroup label="Energy">
+            <option value="">All 8 symbols</option>
+            <optgroup label="Oil">
               <option value="BRENT">Brent Crude</option>
-              <option value="WTI">WTI Crude</option>
-              <option value="NGAS">Natural Gas</option>
             </optgroup>
             <optgroup label="Metals">
               <option value="XAUUSD">Gold (XAUUSD)</option>
-              <option value="XAGUSD">Silver (XAGUSD)</option>
               <option value="PLATINUM">Platinum</option>
-              <option value="PALLADIUM">Palladium</option>
               <option value="COPPER">Copper</option>
             </optgroup>
             <optgroup label="Forex">
               <option value="EURUSD">EUR/USD</option>
-              <option value="GBPUSD">GBP/USD</option>
               <option value="USDJPY">USD/JPY</option>
             </optgroup>
             <optgroup label="Indices">
               <option value="SP500">S&P 500</option>
-              <option value="NASDAQ">Nasdaq 100</option>
               <option value="DOW">Dow Jones</option>
             </optgroup>
           </select>
@@ -202,26 +197,20 @@
         <div class="control-group">
           <label>Symbol</label>
           <select id="optSymbol">
-            <optgroup label="Energy">
+            <optgroup label="Oil">
               <option value="BRENT">Brent Crude</option>
-              <option value="WTI">WTI Crude</option>
-              <option value="NGAS">Natural Gas</option>
             </optgroup>
             <optgroup label="Metals">
               <option value="XAUUSD" selected>Gold (XAUUSD)</option>
-              <option value="XAGUSD">Silver (XAGUSD)</option>
               <option value="PLATINUM">Platinum</option>
-              <option value="PALLADIUM">Palladium</option>
               <option value="COPPER">Copper</option>
             </optgroup>
             <optgroup label="Forex">
               <option value="EURUSD">EUR/USD</option>
-              <option value="GBPUSD">GBP/USD</option>
               <option value="USDJPY">USD/JPY</option>
             </optgroup>
             <optgroup label="Indices">
               <option value="SP500">S&P 500</option>
-              <option value="NASDAQ">Nasdaq 100</option>
               <option value="DOW">Dow Jones</option>
             </optgroup>
           </select>
@@ -268,26 +257,20 @@
         <div class="control-group" id="mcSymbolGroup" style="display:none">
           <label>Symbol</label>
           <select id="mcSymbol">
-            <optgroup label="Energy">
+            <optgroup label="Oil">
               <option value="BRENT">Brent Crude</option>
-              <option value="WTI">WTI Crude</option>
-              <option value="NGAS">Natural Gas</option>
             </optgroup>
             <optgroup label="Metals">
               <option value="XAUUSD" selected>Gold (XAUUSD)</option>
-              <option value="XAGUSD">Silver (XAGUSD)</option>
               <option value="PLATINUM">Platinum</option>
-              <option value="PALLADIUM">Palladium</option>
               <option value="COPPER">Copper</option>
             </optgroup>
             <optgroup label="Forex">
               <option value="EURUSD">EUR/USD</option>
-              <option value="GBPUSD">GBP/USD</option>
               <option value="USDJPY">USD/JPY</option>
             </optgroup>
             <optgroup label="Indices">
               <option value="SP500">S&P 500</option>
-              <option value="NASDAQ">Nasdaq 100</option>
               <option value="DOW">Dow Jones</option>
             </optgroup>
           </select>
