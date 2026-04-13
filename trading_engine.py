@@ -54,11 +54,11 @@ MAX_POSITIONS_PER_SYMBOL = 1
 PRICE_FETCH_INTERVAL = 15          # seconds between price updates
 STRATEGY_INTERVAL = 60             # seconds between strategy evaluations (was 20 — less churning)
 MAX_DAILY_LOSS = 400.0             # tighter daily loss cap (was 600)
-RISK_REWARD_RATIO = 1.5            # 1.5:1 R:R with wider stops = larger TP targets
+RISK_REWARD_RATIO = 2.0            # 2:1 R:R — need only 33% WR to profit (was 1.5)
 SIGNAL_THRESHOLD = 3.0             # minimum composite score (was 2.0 — require strong conviction)
 ATR_STOP_MULT = 3.0               # stop loss distance = 3x ATR (was 2x — give room to breathe)
-ATR_TRAIL_TRIGGER = 2.5           # start trailing after 2.5x ATR move (was 2.0)
-ATR_TRAIL_DIST = 1.5              # trail at 1.5x ATR behind price (was 1.2 — wider trail)
+ATR_TRAIL_TRIGGER = 3.5           # only trail after 3.5x ATR move — let winners reach TP (was 2.5)
+ATR_TRAIL_DIST = 2.0              # trail at 2x ATR behind price — give room (was 1.5)
 LOSS_COOLDOWN_SEC = 600            # 10 min cooldown per symbol after a losing trade (was 5 min)
 TRADE_COOLDOWN_SEC = 1800          # 30 min cooldown per symbol after ANY trade (win or lose)
 MAX_POSITIONS_PER_CLASS = 2        # max 2 positions in same asset class at once
@@ -1475,16 +1475,6 @@ class TradingEngine:
             price = self.prices.get(pos.symbol)
             if not price:
                 continue
-
-            # Partial profit taking: close 50% at 1.5x ATR profit
-            if not pos.partial_closed:
-                atr = self.indicators.get(pos.symbol, {}).get("atr", 0)
-                if atr > 0:
-                    partial_target = atr * 1.5
-                    if pos.side == Side.BUY and price - pos.entry_price >= partial_target:
-                        self._take_partial_profit(pos, price, partial_target)
-                    elif pos.side == Side.SELL and pos.entry_price - price >= partial_target:
-                        self._take_partial_profit(pos, price, partial_target)
 
             if pos.side == Side.BUY:
                 if price <= pos.stop_loss:
