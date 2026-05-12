@@ -10,4 +10,4 @@ services:
         value: "3.11.11"
       - key: GROQ_API_KEY
         sync: false
-# v3.3 deploy
+# v4.0 deploy — R:R fix
