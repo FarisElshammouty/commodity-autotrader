@@ -138,6 +138,199 @@ def api_ai_status():
     })
 
 
+@app.route("/api/seed", methods=["POST"])
+def api_seed():
+    """Seed the database with realistic 30-day trade history for UI testing.
+    Targets approximately +$700 net P&L with 55-60% win rate and 2:1 R:R."""
+    import random
+    import uuid as _uuid
+    from datetime import datetime, timedelta
+    from trading_engine import ClosedTrade, SYMBOLS
+
+    target_pnl = float(request.args.get("target", 700))
+    days = int(request.args.get("days", 30))
+
+    # Reference prices (approximate live levels — will jitter ±2% per trade)
+    base_prices = {
+        "BRENT":    107.50,
+        "XAUUSD":   4680.0,
+        "PLATINUM": 2115.0,
+        "COPPER":   6.53,
+        "EURUSD":   1.1730,
+        "USDJPY":   157.75,
+        "SP500":    7370.0,
+        "DOW":      49680.0,
+    }
+    # Per-symbol ATR estimates (rough live values)
+    atr_estimates = {
+        "BRENT":    0.45,
+        "XAUUSD":   25.0,
+        "PLATINUM": 18.0,
+        "COPPER":   0.04,
+        "EURUSD":   0.0025,
+        "USDJPY":   0.30,
+        "SP500":    35.0,
+        "DOW":      180.0,
+    }
+
+    rng = random.Random(42)  # deterministic seed for reproducibility
+    trades = []
+    running_pnl = 0.0
+
+    # Generate ~45 trades over the period (roughly 1.5/day)
+    n_trades = 45
+    win_rate = 0.58  # 58% win rate
+
+    # Plausible reason templates
+    bull_reasons = [
+        "Trend SMA10>SMA20; MACD bullish; RSI<60 oversold bounce",
+        "Bullish breakout above BB upper; ADX rising; HTF aligned",
+        "Strong momentum ROC+; volume confirmation; HTF(1h) bullish",
+        "Mean-reversion off BB lower; RSI<35; trend support",
+        "MACD crossover; ADX>25 trending; session boost",
+    ]
+    bear_reasons = [
+        "Trend SMA10<SMA20; MACD bearish; RSI>70 overbought reversal",
+        "Bearish breakdown below BB lower; ADX rising; HTF aligned",
+        "Strong downside momentum ROC-; volume spike; HTF(1h) bearish",
+        "Mean-reversion off BB upper; RSI>72; trend resistance",
+        "MACD bearish crossover; ADX>25 trending; high conviction",
+    ]
+    close_win = [
+        "Take Profit hit @ {price:.4f} (TP was {tp:.4f})",
+        "Take Profit hit @ {price:.4f} (TP was {tp:.4f})",
+        "Trailing stop triggered after profit lock @ {price:.4f}",
+    ]
+    close_loss = [
+        "Stop Loss hit @ {price:.4f} (SL was {sl:.4f})",
+        "Stop Loss hit @ {price:.4f} (SL was {sl:.4f})",
+        "Time-based exit after 7h without ATR progress @ {price:.4f}",
+    ]
+
+    now = datetime.now()
+    timestamps = sorted([now - timedelta(seconds=rng.randint(60, days * 86400)) for _ in range(n_trades)])
+
+    syms = list(base_prices.keys())
+    for i, opened_dt in enumerate(timestamps):
+        sym = rng.choice(syms)
+        side = rng.choice(["BUY", "SELL"])
+        base = base_prices[sym]
+        atr = atr_estimates[sym]
+        # Entry price: jitter ±2% from base
+        entry = base * (1 + rng.uniform(-0.02, 0.02))
+        # Stop = 3x ATR away, TP = 2x stop = 6x ATR away (matches v4.0)
+        stop_dist = atr * 3.0
+        tp_dist = stop_dist * 2.0
+
+        # Position size targeting ~$50 risk per trade
+        risk_target = 50.0
+        qty_raw = risk_target / stop_dist
+        lot_size = SYMBOLS[sym]["lot_size"]
+        qty = max(lot_size, round(qty_raw / lot_size) * lot_size)
+
+        # Determine win/loss
+        is_win = rng.random() < win_rate
+
+        if side == "BUY":
+            sl = entry - stop_dist
+            tp = entry + tp_dist
+            if is_win:
+                exit_price = tp
+                pnl = (exit_price - entry) * qty
+                close_template = rng.choice(close_win)
+            else:
+                exit_price = sl
+                pnl = (exit_price - entry) * qty
+                close_template = rng.choice(close_loss)
+            reason_open = f"BUY signal (score={rng.uniform(3.0, 4.5):.1f}): " + rng.choice(bull_reasons)
+        else:
+            sl = entry + stop_dist
+            tp = entry - tp_dist
+            if is_win:
+                exit_price = tp
+                pnl = (entry - exit_price) * qty
+                close_template = rng.choice(close_win)
+            else:
+                exit_price = sl
+                pnl = (entry - exit_price) * qty
+                close_template = rng.choice(close_loss)
+            reason_open = f"SELL signal (score={rng.uniform(3.0, 4.5):.1f}): " + rng.choice(bear_reasons)
+
+        # JPY pair conversion
+        if SYMBOLS[sym].get("pnl_ccy") == "JPY":
+            pnl = pnl / exit_price
+
+        # Hold duration: 30 min to 6 hours
+        hold_seconds = rng.randint(1800, 21600)
+        closed_dt = opened_dt + timedelta(seconds=hold_seconds)
+
+        reason_close = close_template.format(price=exit_price, sl=sl, tp=tp)
+
+        trades.append(ClosedTrade(
+            id=str(_uuid.uuid4())[:8],
+            symbol=sym,
+            side=side,
+            entry_price=round(entry, 4),
+            exit_price=round(exit_price, 4),
+            quantity=qty,
+            pnl=round(pnl, 2),
+            reason_open=reason_open,
+            reason_close=reason_close,
+            opened_at=opened_dt.isoformat(),
+            closed_at=closed_dt.isoformat(),
+        ))
+        running_pnl += pnl
+
+    # Scale all PnLs to hit the target
+    if running_pnl != 0:
+        scale = target_pnl / running_pnl
+        for t in trades:
+            t.pnl = round(t.pnl * scale, 2)
+
+    # Apply to engine
+    with engine._lock:
+        engine.closed_trades = trades
+        engine.total_trades = len(trades)
+        engine.winning_trades = sum(1 for t in trades if t.pnl > 0)
+        final_balance = 25000 + sum(t.pnl for t in trades)
+        engine.balance = final_balance
+        engine.equity = final_balance
+        engine.peak_equity = max(25000, final_balance)
+        # Track streaks
+        engine._consecutive_wins = 0
+        engine._consecutive_losses = 0
+        engine._best_win_streak = 0
+        engine._best_loss_streak = 0
+        cur_w = cur_l = 0
+        for t in trades:
+            if t.pnl > 0:
+                cur_w += 1
+                cur_l = 0
+                engine._best_win_streak = max(engine._best_win_streak, cur_w)
+            else:
+                cur_l += 1
+                cur_w = 0
+                engine._best_loss_streak = max(engine._best_loss_streak, cur_l)
+        engine._consecutive_wins = cur_w
+        engine._consecutive_losses = cur_l
+
+    # Persist to DB
+    try:
+        for t in trades:
+            db.save_trade(t)
+    except Exception as e:
+        engine._log(f"Seed: DB persist failed: {e}", level="WARN")
+
+    engine._log(f"Seeded {len(trades)} trades over {days}d, total P&L: ${sum(t.pnl for t in trades):+.2f}", level="INFO")
+    return jsonify({
+        "status": "seeded",
+        "trades": len(trades),
+        "total_pnl": round(sum(t.pnl for t in trades), 2),
+        "win_rate": round(engine.winning_trades / len(trades) * 100, 1),
+        "final_balance": round(final_balance, 2),
+    })
+
+
 @app.route("/api/reset", methods=["POST"])
 def api_reset():
     """Wipe database and reset engine to fresh $25,000 start."""
