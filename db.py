@@ -41,16 +41,30 @@ def _get_sqlite_conn() -> sqlite3.Connection:
 
 
 def _get_conn():
-    """Get the appropriate database connection."""
+    """Get the appropriate database connection.
+    If PostgreSQL fails at runtime (e.g. DB was deleted), auto-fall back to SQLite."""
+    global _use_pg, _pg_url
     if _use_pg:
-        return _get_pg_conn()
+        try:
+            return _get_pg_conn()
+        except Exception as e:
+            print(f"[DB] PostgreSQL connection lost ({e}). Falling back to SQLite.")
+            _use_pg = False
+            _pg_url = None
+            try:
+                os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+                _init_sqlite()
+            except Exception:
+                pass
     return _get_sqlite_conn()
 
 
 # ── Init ────────────────────────────────────────────────────────────────────
 
 def init_db(path: str | None = None):
-    """Create tables if they don't exist. Call once on startup."""
+    """Create tables if they don't exist. Call once on startup.
+    Gracefully falls back to SQLite if PostgreSQL is unreachable (e.g. Render free
+    DB expired after 90 days)."""
     global _DB_PATH, _use_pg, _pg_url
 
     # Check for PostgreSQL URL
@@ -61,13 +75,27 @@ def init_db(path: str | None = None):
             _pg_url = _pg_url.replace("postgres://", "postgresql://", 1)
         _use_pg = True
         print(f"[DB] Using PostgreSQL (Render persistent database)")
-        _init_pg()
-    else:
-        _use_pg = False
-        if path:
-            _DB_PATH = path
-        print(f"[DB] Using SQLite at {_DB_PATH}")
+        try:
+            _init_pg()
+            return
+        except Exception as e:
+            # Fall back to SQLite — keep the app alive
+            print(f"[DB] PostgreSQL unreachable ({e}). Falling back to SQLite (in-memory persistence).")
+            _use_pg = False
+            _pg_url = None
+
+    if path:
+        _DB_PATH = path
+    # Ensure the data directory exists
+    try:
+        os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
+    except Exception:
+        pass
+    print(f"[DB] Using SQLite at {_DB_PATH}")
+    try:
         _init_sqlite()
+    except Exception as e:
+        print(f"[DB] SQLite init failed ({e}). DB persistence disabled but app will run.")
 
 
 def _init_pg():
